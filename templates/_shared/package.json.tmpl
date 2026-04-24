@@ -1,0 +1,38 @@
+{
+  "name": "{{workload}}",
+  "version": "0.1.0",
+  "description": "{{description}}",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">={{node_version}}",
+    "pnpm": ">=9"
+  },
+  "packageManager": "pnpm@9.15.0",
+  "scripts": {
+    "dev": "echo 'TODO: wire per archetype'",
+    "build": "echo 'TODO: wire per archetype'",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "biome check .",
+    "format": "biome format --write .",
+    "check": "biome check --write .",
+    "typecheck": "tsc --noEmit",
+    "deploy:dev": "./infra/deploy.sh dev",
+    "prepare": "lefthook install || true"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.0.0",
+    "@commitlint/cli": "^19.0.0",
+    "@commitlint/config-conventional": "^19.0.0",
+    "lefthook": "^1.6.0",
+    "typescript": "~5.6.0",
+    "vitest": "^2.1.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/{{github_org}}/{{workload}}.git"
+  },
+  "license": "{{license}}",
+  "author": "{{author}} <{{author_email}}>"
+}

@@ -1,0 +1,51 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build output
+dist/
+build/
+out/
+*.tsbuildinfo
+
+# Logs
+*.log
+logs/
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+
+# Env — never commit
+.env
+.env.local
+.env.development
+.env.production
+.env.test
+!.env.example
+
+# Editor
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json.example
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Claude Code
+.claude/worktrees/
+.claude/scheduled_tasks.lock
+.claude/cache/
+
+# Coverage / test output
+coverage/
+.nyc_output/
+*.lcov
+
+# OS
+.DS_Store
+
+# Temp
+.tmp/
+.cache/

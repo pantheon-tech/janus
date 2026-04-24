@@ -1,0 +1,22 @@
+pre-commit:
+  parallel: true
+  commands:
+    biome-check:
+      glob: '*.{js,ts,jsx,tsx,json,jsonc}'
+      run: pnpm biome check --write --no-errors-on-unmatched {staged_files} && git add {staged_files}
+    typecheck:
+      glob: '*.{ts,tsx}'
+      run: pnpm tsc --noEmit
+    gitleaks:
+      run: |
+        if command -v gitleaks >/dev/null 2>&1; then
+          gitleaks protect --staged --redact --verbose
+        else
+          echo "gitleaks not installed — install via https://github.com/gitleaks/gitleaks"
+          exit 1
+        fi
+
+commit-msg:
+  commands:
+    commitlint:
+      run: pnpm commitlint --edit {1}

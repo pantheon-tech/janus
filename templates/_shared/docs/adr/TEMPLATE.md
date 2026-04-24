@@ -1,0 +1,28 @@
+# NNNN — <Title>
+
+- **Status**: proposed
+- **Date**: YYYY-MM-DD
+- **Deciders**: @{{github_org}}
+
+## Context
+
+What situation forced this decision. 1–3 paragraphs.
+
+## Decision
+
+The pick, declaratively.
+
+## Consequences
+
+- Positive:
+- Negative:
+- Neutral:
+
+## Considered Alternatives
+
+- Option A — rejected because X.
+- Option B (chosen) — selected because Y.
+
+## References
+
+- External docs, prior ADRs, issues.

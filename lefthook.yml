@@ -1,0 +1,21 @@
+# lefthook: fast, parallel git hook manager
+# https://lefthook.dev/
+
+pre-commit:
+  parallel: true
+  commands:
+    biome-check:
+      glob: '*.{js,ts,jsx,tsx,json,jsonc}'
+      run: pnpm biome check --write --no-errors-on-unmatched {staged_files} && git add {staged_files}
+    gitleaks:
+      run: |
+        if command -v gitleaks >/dev/null 2>&1; then
+          gitleaks protect --staged --redact --verbose
+        else
+          echo "gitleaks not installed — skipping secret scan (install: https://github.com/gitleaks/gitleaks)"
+        fi
+
+commit-msg:
+  commands:
+    commitlint:
+      run: pnpm commitlint --edit {1}

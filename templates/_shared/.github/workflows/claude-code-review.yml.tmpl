@@ -1,0 +1,41 @@
+name: Claude Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, ready_for_review, reopened]
+
+concurrency:
+  group: claude-review-${{ '{{' }} github.event.pull_request.number {{ '}}' }}
+  cancel-in-progress: true
+
+jobs:
+  claude-review:
+    if: github.actor != 'claude[bot]' && github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Run Claude Code Review
+        # OIDC: never SHA-pin this action. See janus ADR 0001 references and
+        # https://github.com/anthropics/claude-code-action/issues/443
+        uses: anthropics/claude-code-action@v1
+        with:
+          track_progress: true
+          claude_code_oauth_token: ${{ '{{' }} secrets.CLAUDE_CODE_OAUTH_TOKEN {{ '}}' }}
+          github_token: ${{ '{{' }} secrets.ACTIONS_PAT || github.token {{ '}}' }}
+          allowed_bots: 'claude,dependabot'
+          prompt: |
+            REPO: ${{ '{{' }} github.repository {{ '}}' }}
+            PR NUMBER: ${{ '{{' }} github.event.pull_request.number {{ '}}' }}
+            PR BRANCH: ${{ '{{' }} github.head_ref {{ '}}' }}
+
+            Read and follow the instructions in .github/prompts/code-review.md
+          claude_args: '--model claude-sonnet-4-6 --allowed-tools "Bash(gh issue:*),Bash(gh pr:*),Bash(gh api:*),Bash(gh search:*),Bash(gh label:*)"'

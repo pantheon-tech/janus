@@ -1,0 +1,52 @@
+# {{workload}}
+
+{{description}}
+
+## Tech Stack
+
+| Aspect | Choice |
+|---|---|
+| Package manager | pnpm |
+| Runtime | Node {{node_version}} |
+| Language | TypeScript (strict) |
+| Lint + format | Biome v2 |
+| Tests | Vitest |
+| Cloud | Azure ({{env_default}}, {{region}}) |
+| IaC | Bicep + AVM composition |
+| Archetype | {{archetype}} |
+
+## Commands
+
+```bash
+pnpm install
+pnpm dev
+pnpm test
+pnpm lint
+pnpm typecheck
+pnpm build
+pnpm deploy:dev     # ./infra/deploy.sh dev
+```
+
+## Structure
+
+```
+<TODO: populated by scaffold per archetype>
+```
+
+## Critical Context
+
+- <TODO: non-obvious invariants specific to this project>
+
+## Design Decisions
+
+- [ADR 0001 — Stack choices]({{template_adr_link}})
+- See `docs/adr/` for project-specific decisions.
+
+## Known Issues
+
+- <dated list>
+
+---
+
+*Last reviewed: {{date}}*
+*Template: janus {{template_version}}*

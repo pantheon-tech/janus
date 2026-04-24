@@ -1,0 +1,60 @@
+name: Docs Staleness Check
+
+on:
+  schedule:
+    - cron: '0 9 * * 1'  # 9 AM UTC Monday
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Scan frontmatter
+        id: scan
+        run: |
+          set -euo pipefail
+          STALE=$(find docs -name '*.md' -type f | while read f; do
+            # Extract last_reviewed from frontmatter (YAML)
+            REVIEWED=$(awk '/^---$/{flag=!flag; next} flag && /^last_reviewed:/ {print $2}' "$f" | head -1)
+            if [ -n "$REVIEWED" ]; then
+              # Calculate age in days
+              NOW=$(date +%s)
+              REV=$(date -d "$REVIEWED" +%s 2>/dev/null || echo "$NOW")
+              DAYS=$(( (NOW - REV) / 86400 ))
+              # Thresholds
+              if [[ "$f" == *"/runbooks/"* ]] && [ "$DAYS" -gt 90 ]; then
+                echo "$f: $DAYS days old (runbook threshold 90)"
+              elif [[ "$f" == *"AGENTS.md"* ]] && [ "$DAYS" -gt 180 ]; then
+                echo "$f: $DAYS days old (AGENTS.md threshold 180)"
+              fi
+            fi
+          done)
+          if [ -n "$STALE" ]; then
+            echo "has_stale=true" >> $GITHUB_OUTPUT
+            echo "stale<<EOF" >> $GITHUB_OUTPUT
+            echo "$STALE" >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+          else
+            echo "has_stale=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Open issue
+        if: steps.scan.outputs.has_stale == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const stale = `${{ '{{' }} steps.scan.outputs.stale {{ '}}' }}`;
+            github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: 'Doc staleness: some docs need review',
+              body: `The following docs are overdue for review:\n\n\`\`\`\n${stale}\n\`\`\`\n\nUpdate the \`last_reviewed\` frontmatter or refresh content.`,
+              labels: ['documentation', 'staleness']
+            });

@@ -1,0 +1,30 @@
+{
+  "name": "janus",
+  "version": "0.1.0",
+  "description": "Portable project starter kit for TypeScript + Azure solo-dev work",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20",
+    "pnpm": ">=9"
+  },
+  "packageManager": "pnpm@9.15.0",
+  "scripts": {
+    "lint": "biome check .",
+    "format": "biome format --write .",
+    "check": "biome check --write .",
+    "prepare": "lefthook install || true"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.0.0",
+    "@commitlint/cli": "^19.0.0",
+    "@commitlint/config-conventional": "^19.0.0",
+    "lefthook": "^1.6.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/skipnz/janus.git"
+  },
+  "license": "MIT",
+  "author": "Daniel Skipper <daniel@skipper.kiwi>"
+}

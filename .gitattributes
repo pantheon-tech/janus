@@ -1,0 +1,21 @@
+# Ensure consistent line endings across platforms
+* text=auto eol=lf
+
+# Lockfiles — union merge (conflicts resolved by combining both sides)
+pnpm-lock.yaml merge=union
+package-lock.json merge=union
+
+# Binary files — never diff
+*.png binary
+*.jpg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.woff binary
+*.woff2 binary
+
+# Generated files — collapse in diff view
+*.min.js linguist-generated
+*.min.css linguist-generated
+dist/* linguist-generated
+build/* linguist-generated

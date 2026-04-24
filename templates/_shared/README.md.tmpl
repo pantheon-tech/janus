@@ -1,0 +1,49 @@
+# {{workload}}
+
+{{description}}
+
+## Prerequisites
+
+- Node {{node_version}} (`.nvmrc` pinned)
+- pnpm 9+
+- Azure CLI (`az`) for deploys
+- GitHub CLI (`gh`) for repo operations
+
+## Quick Start
+
+```bash
+pnpm install
+cp .env.example .env.local
+# fill in .env.local values
+pnpm dev
+```
+
+## Commands
+
+```bash
+pnpm dev           # run locally
+pnpm test          # run tests
+pnpm lint          # biome check
+pnpm format        # biome format --write
+pnpm typecheck     # tsc --noEmit
+pnpm build         # production build
+```
+
+## Deploy
+
+```bash
+pnpm deploy:dev    # see infra/deploy.sh
+```
+
+Infrastructure is managed via Bicep + AVM composition. See `infra/README.md`.
+
+## Project docs
+
+- [AGENTS.md](./AGENTS.md) — primary agent context
+- [docs/architecture.md](./docs/architecture.md) — system overview
+- [docs/adr/](./docs/adr/) — architectural decisions
+- [docs/runbooks/](./docs/runbooks/) — operational procedures
+
+## License
+
+{{license}} — see [LICENSE](./LICENSE).

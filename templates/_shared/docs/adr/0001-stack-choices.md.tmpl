@@ -1,0 +1,50 @@
+# 0001 — Stack Choices
+
+- **Status**: accepted
+- **Date**: {{date}}
+- **Deciders**: @{{github_org}}
+- **Template**: scaffolded from janus {{template_version}}
+
+## Context
+
+This project was scaffolded from [janus]({{janus_repo_url}}) {{template_version}}. The canonical stack choices inherited from janus are recorded below. Any deviation from these defaults requires a new ADR superseding the relevant section.
+
+## Decision
+
+Inherited from janus {{template_version}}:
+
+- Language: TypeScript (strict)
+- Runtime: Node {{node_version}}
+- Package manager: pnpm
+- Lint + format: Biome v2
+- Tests: Vitest
+- Cloud: Azure ({{region}})
+- IaC: Bicep + AVM composition
+- Default branch: main (environments enforce deploy approval)
+- Agent context: AGENTS.md primary + CLAUDE.md pointer
+- Secrets: four-layer model (Key Vault runtime / GH env secrets CI / .env.local dev / GH Packages NPM)
+- Azure naming: `{type}-{workload}-{env}` with storage `st{workload}{env}`
+
+See the full janus ADR index for detailed rationale on each choice:
+
+- janus ADR 0001 — Stack choices
+- janus ADR 0002 — Azure resource naming
+- janus ADR 0003 — Secret management
+- janus ADR 0004 — AVM-first infrastructure
+- janus ADR 0005 — AGENTS.md primary
+- janus ADR 0006 — Documentation shapes
+
+## Consequences
+
+See janus ADR 0001 for full consequences.
+
+## Project-specific additions
+
+Add any project-level defaults here (workload-specific constraints, e.g. "must support offline mode", "must run on-prem in addition to Azure").
+
+<!-- Add additions below this line -->
+
+## References
+
+- [janus repo]({{janus_repo_url}})
+- Template version: `{{template_version}}`
