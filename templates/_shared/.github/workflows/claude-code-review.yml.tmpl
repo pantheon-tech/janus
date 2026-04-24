@@ -19,13 +19,14 @@ jobs:
       issues: write
       id-token: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
           fetch-depth: 1
 
       - name: Run Claude Code Review
-        # OIDC: never SHA-pin this action. See janus ADR 0001 references and
-        # https://github.com/anthropics/claude-code-action/issues/443
+        # OIDC: do NOT SHA-pin claude-code-action — its OIDC validation requires
+        # the workflow file to match the default branch. SHA-pin breaks token
+        # exchange (401) on every PR. See https://github.com/anthropics/claude-code-action/issues/443
         uses: anthropics/claude-code-action@v1
         with:
           track_progress: true

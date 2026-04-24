@@ -1,0 +1,44 @@
+name: Issue Triage
+
+# Auto-classify new issues using the rubric at .claude/skills/triage-issue/label-rubric.md.
+
+on:
+  issues:
+    types: [opened, transferred]
+
+concurrency:
+  group: triage-${{ '{{' }} github.event.issue.number {{ '}}' }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  issues: write
+  id-token: write
+
+jobs:
+  triage:
+    if: "!contains(github.event.issue.labels.*.name, 'auto-triaged')"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      - name: Triage with Claude
+        # See claude-code-review.yml for OIDC pinning rationale.
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ '{{' }} secrets.CLAUDE_CODE_OAUTH_TOKEN {{ '}}' }}
+          allowed_bots: 'claude,dependabot,github-actions'
+          prompt: |
+            Triage issue #${{ '{{' }} github.event.issue.number {{ '}}' }} in ${{ '{{' }} github.repository {{ '}}' }}.
+
+            Read the issue: `gh issue view ${{ '{{' }} github.event.issue.number {{ '}}' }} --json title,body,labels`
+
+            Read the rubric at `.claude/skills/triage-issue/label-rubric.md`. If the file is missing,
+            apply only the `needs-triage` label and abort.
+
+            Classify per the rubric. Apply labels with `gh issue edit`. Set milestone if applicable.
+            Post a triage summary comment. Always add `auto-triaged` when done.
+
+            If you cannot confidently classify a dimension, add `needs-triage` and explain.
+          claude_args: '--model claude-sonnet-4-6 --allowed-tools "Bash(gh issue:*),Bash(gh label:*),Read,Grep"'

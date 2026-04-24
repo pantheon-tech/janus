@@ -1,0 +1,89 @@
+name: Claude Autofix
+
+# Fail-soft pattern: when CI fails on a PR, capture logs, open a `claude-fix`
+# labelled issue (or update existing), tag @claude. Cooldown + open-PR dedup
+# prevent spam loops.
+#
+# Adapted from the ae-option pattern.
+
+on:
+  workflow_run:
+    workflows: ['CI']
+    types: [completed]
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+  actions: read
+
+jobs:
+  open-fix-issue:
+    if: github.event.workflow_run.conclusion == 'failure' && github.event.workflow_run.event == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      - name: Cooldown check
+        id: cooldown
+        env:
+          GH_TOKEN: ${{ '{{' }} github.token {{ '}}' }}
+          PR_NUMBER: ${{ '{{' }} github.event.workflow_run.pull_requests[0].number {{ '}}' }}
+        run: |
+          # 30-minute cooldown per PR + open-PR dedup
+          MARKER="<!-- claude-autofix:pr:$PR_NUMBER -->"
+          EXISTING=$(gh issue list --search "in:body \"$MARKER\"" --state open \
+            --json number,createdAt --jq '.[0]' 2>/dev/null || echo "")
+          if [ -n "$EXISTING" ]; then
+            CREATED=$(echo "$EXISTING" | jq -r '.createdAt')
+            AGE_SECS=$(( $(date -u +%s) - $(date -d "$CREATED" +%s) ))
+            if [ "$AGE_SECS" -lt 1800 ]; then
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+              echo "Cooldown active (issue $(echo "$EXISTING" | jq -r '.number') opened ${AGE_SECS}s ago); skipping"
+              exit 0
+            fi
+          fi
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+          echo "marker=$MARKER" >> "$GITHUB_OUTPUT"
+
+      - name: Capture failed logs
+        if: steps.cooldown.outputs.skip == 'false'
+        id: logs
+        env:
+          GH_TOKEN: ${{ '{{' }} github.token {{ '}}' }}
+          RUN_ID: ${{ '{{' }} github.event.workflow_run.id {{ '}}' }}
+        run: |
+          LOG=$(gh run view "$RUN_ID" --log-failed 2>&1 | head -200 || echo "(log capture failed)")
+          {
+            echo "log<<LOGEOF"
+            echo "$LOG"
+            echo "LOGEOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Create or update fix issue
+        if: steps.cooldown.outputs.skip == 'false'
+        env:
+          GH_TOKEN: ${{ '{{' }} github.token {{ '}}' }}
+          PR_NUMBER: ${{ '{{' }} github.event.workflow_run.pull_requests[0].number {{ '}}' }}
+          RUN_URL: ${{ '{{' }} github.event.workflow_run.html_url {{ '}}' }}
+          MARKER: ${{ '{{' }} steps.cooldown.outputs.marker {{ '}}' }}
+          LOG: ${{ '{{' }} steps.logs.outputs.log {{ '}}' }}
+        run: |
+          BODY=$(cat <<EOF
+          @claude CI failed on PR #$PR_NUMBER. Please review the logs and push a fix to the PR branch.
+
+          **Run**: $RUN_URL
+
+          **Failed step output (truncated)**:
+          \`\`\`
+          $LOG
+          \`\`\`
+
+          $MARKER
+          EOF
+          )
+          gh issue create \
+            --title "[claude-fix] CI failure on PR #$PR_NUMBER" \
+            --body "$BODY" \
+            --label "claude-fix,ci-failure"

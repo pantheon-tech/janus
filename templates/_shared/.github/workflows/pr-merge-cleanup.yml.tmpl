@@ -1,0 +1,35 @@
+name: PR Merge Cleanup
+
+# Auto-close `code-review` and `claude-fix` issues when their parent PR merges.
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [staging, main]
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  close-issues:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Close related issues
+        env:
+          GH_TOKEN: ${{ '{{' }} secrets.GITHUB_TOKEN {{ '}}' }}
+          PR_NUMBER: ${{ '{{' }} github.event.pull_request.number {{ '}}' }}
+          REPO: ${{ '{{' }} github.repository {{ '}}' }}
+        run: |
+          for label in code-review claude-fix; do
+            gh issue list --repo "$REPO" --label "$label" --state open --limit 50 \
+              --json number,body \
+              --jq ".[] | select(.body | test(\"PR #${PR_NUMBER}\")) | .number" \
+            | while read -r num; do
+                [ -z "$num" ] && continue
+                gh issue close "$num" --repo "$REPO" \
+                  --comment "Auto-closed: source PR #${PR_NUMBER} merged."
+              done
+          done
