@@ -58,7 +58,7 @@ janus/
 ## Critical Context
 
 - Conventions live in `docs/conventions/`, not in ADRs. ADRs are for janus-specific architectural decisions only.
-- Templates use `{{snake_case}}` placeholders for slot substitution at scaffold time.
+- Templates use `<%snake_case%>` placeholders for slot substitution at scaffold time (Mustache custom delimiters; `.tmpl` files open with `{{=<% %>=}}` so GitHub Actions `${{ }}` expressions pass through untouched).
 - `_shared/` is overlaid first; per-archetype files take precedence on collision.
 - Two-branch model: feature → `staging` → `main`. See `docs/conventions/git-workflow.md`.
 
