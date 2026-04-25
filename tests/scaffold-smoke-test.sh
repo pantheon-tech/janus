@@ -157,9 +157,10 @@ verify_container_app() {
 # Cover key archetypes:
 #   1 backend-functions  — Azure-flavoured slots
 #   2 backend-container-app  — extended acid test
+#   3 frontend-vite-react  — React/Vite/MSAL/Tailwind v4
 #   4 generic-ts  — minimal path
 #   5 types-package  — pure-types, no runtime
-for arch_num in 1 2 4 5; do
+for arch_num in 1 2 3 4 5; do
   target="${TEST_BASE}/test-${arch_num}"
   echo "--- Archetype $arch_num ---"
   if ! run_scaffold "$target" "$arch_num"; then
