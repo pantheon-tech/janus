@@ -96,12 +96,33 @@ verify_project() {
     errors+=("Project is not a git repository")
   fi
 
-  # Workflow YAML must parse.
+  # Workflow YAML must parse. Prefers PyYAML (best diagnostics) but falls
+  # back to `yq` (Go, no deps) if available, then to a minimal heuristic.
+  # CI installs PyYAML in the smoke job; a fresh checkout without either
+  # tool degrades to the heuristic with a one-line warning.
   if [ -d "$target/.github/workflows" ]; then
+    local yaml_check
+    if python3 -c 'import yaml' 2>/dev/null; then
+      yaml_check='py'
+    elif command -v yq >/dev/null 2>&1; then
+      yaml_check='yq'
+    else
+      yaml_check='heuristic'
+      echo "  (warn) no PyYAML or yq; YAML check is heuristic only" >&2
+    fi
     while IFS= read -r f; do
-      if ! python3 -c "import sys, yaml; yaml.safe_load(open(sys.argv[1]))" "$f" 2>/dev/null; then
-        errors+=("Invalid YAML: ${f#$target/}")
-      fi
+      case "$yaml_check" in
+        py)
+          python3 -c "import sys, yaml; yaml.safe_load(open(sys.argv[1]))" "$f" 2>/dev/null \
+            || errors+=("Invalid YAML: ${f#$target/}") ;;
+        yq)
+          yq eval '.' "$f" >/dev/null 2>&1 \
+            || errors+=("Invalid YAML: ${f#$target/}") ;;
+        heuristic)
+          # Heuristic: file is non-empty and parses as TOP-LEVEL key:value pairs.
+          [ -s "$f" ] && grep -qE '^[a-zA-Z_-]+:' "$f" \
+            || errors+=("YAML heuristic failed (file empty or no top-level keys): ${f#$target/}") ;;
+      esac
     done < <(find "$target/.github/workflows" -maxdepth 1 -name '*.yml' -type f)
   fi
 

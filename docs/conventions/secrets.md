@@ -27,7 +27,24 @@ Four layers. No cross-contamination. Each secret has exactly one source of truth
 - **Store**: GitHub environment secrets (per environment: `staging`, `prod`).
 - **Auth to Azure**: OIDC federation. No `AZURE_CREDENTIALS` JSON.
 - **Federated credentials per service principal**: two — one for `environment:<env>` deploy, one for `pull_request` for what-if preview.
-- **Repo-level secrets**: only for cross-environment tooling (e.g. `CLAUDE_CODE_OAUTH_TOKEN`). Never for cloud auth.
+- **Repo-level secrets**: only for cross-environment tooling (e.g. `CLAUDE_CODE_OAUTH_TOKEN`, `ACTIONS_PAT`). Never for cloud auth.
+
+### PAT scope policy
+
+When a workflow needs to trigger another workflow or post comments cross-repo, prefer a **fine-grained PAT** over the classic `repo`-scoped one:
+
+| Use case | Fine-grained scope (preferred) | Classic scope (avoid) |
+|---|---|---|
+| Comment on issues/PRs | `Issues: write` + `Pull requests: write` | `repo` (over-permissioned) |
+| Trigger workflows in another repo | `Actions: write` (target repo only) | `repo` |
+| Read-only metadata | `Metadata: read` (always required) | `repo` |
+
+Fine-grained PATs:
+- Scope to specific repos, not "all repos for this user/org".
+- Expire on a date you set (max 1 year — calendar an explicit rotation reminder).
+- Are revocable per-token without burning a re-used classic.
+
+Store the PAT as a GitHub repo secret named `ACTIONS_PAT` (or `<PURPOSE>_PAT`). Reference in workflows as `${{ secrets.ACTIONS_PAT }}`.
 
 ### Federated credential subjects (Azure)
 

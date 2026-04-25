@@ -1,4 +1,5 @@
 {
+  "_comment": "Static Web App config. CSP below is MSAL/Azure-AD-compatible; tighten per-project (remove 'unsafe-inline' once you have a nonce strategy; add specific connect-src origins for your APIs and Application Insights endpoint).",
   "navigationFallback": {
     "rewrite": "/index.html",
     "exclude": ["/assets/*", "/api/*"]
@@ -6,6 +7,9 @@
   "globalHeaders": {
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "DENY",
-    "Referrer-Policy": "strict-origin-when-cross-origin"
+    "Referrer-Policy": "strict-origin-when-cross-origin",
+    "Strict-Transport-Security": "max-age=63072000; includeSubDomains; preload",
+    "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
+    "Content-Security-Policy": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https://login.microsoftonline.com https://*.b2clogin.com https://graph.microsoft.com https://*.applicationinsights.azure.com; frame-src https://login.microsoftonline.com https://*.b2clogin.com; object-src 'none'; base-uri 'self'; form-action 'self'"
   }
 }

@@ -55,12 +55,25 @@ if [ -z "$GITHUB_ORG" ]; then
   echo "Error: GitHub org/user is required."
   exit 1
 fi
+# GitHub username/org rules: 1-39 chars, alphanumeric or hyphen, no leading
+# or trailing hyphen, no consecutive hyphens.
+if ! [[ "$GITHUB_ORG" =~ ^[a-zA-Z0-9]([a-zA-Z0-9-]{0,37}[a-zA-Z0-9])?$ ]] \
+   || [[ "$GITHUB_ORG" == *--* ]]; then
+  echo "Error: '${GITHUB_ORG}' is not a valid GitHub org/user (1-39 chars, alphanumeric or hyphen, no leading/trailing/consecutive hyphens)."
+  exit 1
+fi
 
 read -r -p "Author name [${GIT_USER_NAME}]: " AUTHOR
 AUTHOR="${AUTHOR:-${GIT_USER_NAME}}"
 
 read -r -p "Author email [${GIT_USER_EMAIL}]: " AUTHOR_EMAIL
 AUTHOR_EMAIL="${AUTHOR_EMAIL:-${GIT_USER_EMAIL}}"
+# Cheap email validation — local@domain with at least one dot in domain.
+# Not RFC-5322; just enough to catch typos.
+if [ -n "$AUTHOR_EMAIL" ] && ! [[ "$AUTHOR_EMAIL" =~ ^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$ ]]; then
+  echo "Error: '${AUTHOR_EMAIL}' doesn't look like a valid email address."
+  exit 1
+fi
 
 # ─── Project basics ──────────────────────────────────────────────────────
 read -r -p "Workload slug (3-12 chars, lowercase, a-z0-9): " WORKLOAD
