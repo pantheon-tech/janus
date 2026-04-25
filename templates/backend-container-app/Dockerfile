@@ -4,7 +4,7 @@ FROM node:24-slim AS builder
 WORKDIR /app
 
 # Install pnpm
-RUN corepack enable && corepack prepare pnpm@latest --activate
+RUN corepack enable && corepack prepare pnpm@10.33.2 --activate
 
 # Copy manifests first (layer-cache friendly)
 COPY package.json pnpm-lock.yaml ./
@@ -22,7 +22,7 @@ FROM node:24-slim AS deps
 
 WORKDIR /app
 
-RUN corepack enable && corepack prepare pnpm@latest --activate
+RUN corepack enable && corepack prepare pnpm@10.33.2 --activate
 
 COPY package.json pnpm-lock.yaml ./
 
