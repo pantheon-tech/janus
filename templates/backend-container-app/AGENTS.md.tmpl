@@ -1,0 +1,110 @@
+{{=<% %>=}}
+# <%workload%>
+
+## Overview
+
+<%description%>
+
+## Tech Stack
+
+| Aspect | Choice |
+|---|---|
+| Package manager | pnpm |
+| Runtime | Node <%node_version%> |
+| Language | TypeScript (strict) |
+| HTTP framework | Express 5 |
+| WebSockets | ws 8 |
+| Logging | pino + pino-http |
+| Lint + format | Biome v2 |
+| Tests | Vitest + supertest |
+| Dev runner | tsx |
+| Build | tsup (CJS) |
+| Cloud | Azure Container App (staging + prod) |
+| IaC | Bicep + AVM composition |
+| Archetype | backend-container-app |
+
+## Commands
+
+```bash
+pnpm install
+pnpm dev          # tsx watch src/server.ts
+pnpm build        # tsup → dist/server.js (CJS)
+pnpm start        # node dist/server.js
+pnpm test         # vitest run
+pnpm lint         # biome check
+pnpm typecheck    # tsc --noEmit
+pnpm deploy:staging   # ./infra/deploy.sh staging
+```
+
+## Branching
+
+- `staging` — working branch, auto-deploys to staging on push
+- `main` — production, deploys to prod (manual / required reviewers)
+
+## Structure
+
+```
+<%workload%>/
+├── src/
+│   └── server.ts          # Express app + ws server, health route, graceful shutdown
+├── tests/
+│   └── server.test.ts     # supertest health check
+├── Dockerfile             # Multi-stage Node 24 slim, non-root user
+├── infra/
+│   ├── main.bicep         # ACR → CAE → Container App via AVM
+│   ├── modules/
+│   └── scripts/
+├── .github/workflows/
+│   └── deploy.yml
+├── AGENTS.md
+├── CLAUDE.md
+└── README.md
+```
+
+## Critical Context
+
+### Long-running process
+
+This is a long-running Node.js server, not a function/lambda. The Container App keeps it alive continuously. Design accordingly:
+
+- Keep persistent connections open across requests (no per-request teardown).
+- Avoid holding references that prevent Node's event loop from draining.
+- Use connection pools rather than per-request connections for databases.
+
+### Graceful shutdown — SIGTERM contract
+
+Azure Container App sends **SIGTERM 30 seconds before SIGKILL** when a revision is stopped or replaced. The server handles this by:
+
+1. Stopping new HTTP accepts (`server.close()`).
+2. Closing the WebSocket server (`wss.close()`).
+3. Waiting for in-flight requests to drain (default 25 s).
+4. Exiting with code 0.
+
+The graceful shutdown is implemented in `src/server.ts`. Do not remove it or shorten the drain window below the time needed by your slowest operation.
+
+### WebSockets are first-class
+
+ws is wired via `noServer: true` + `server.on('upgrade', ...)`. This lets Express handle HTTP routes while ws handles `ws://` upgrades on the same port (3000). To add more WS paths, extend the `upgrade` handler — do not create a second server.
+
+### Logging — pino, not console
+
+All output goes through `pino` (structured JSON). The pino-http middleware attaches `req.log` to every request. Use `req.log.info(...)` in route handlers. Use the module-level `logger` for startup/shutdown messages. `console.log` will trip the biome `noConsole` lint rule.
+
+### Port
+
+The server reads `PORT` from the environment (default 3000). EXPOSE in the Dockerfile and the Container App ingress port are both set to 3000. Do not hard-code the port.
+
+## Design Decisions
+
+- Stack inherited from janus <%template_version%> — see `docs/conventions/stack.md`.
+- See `docs/conventions/` for shared conventions (stack, layering, testing, etc.).
+- See `docs/adr/` for project-specific architectural decisions.
+
+## Known Issues
+
+- <dated list>
+
+---
+
+*Last reviewed: <%date%>*
+*Template: janus <%template_version%>*

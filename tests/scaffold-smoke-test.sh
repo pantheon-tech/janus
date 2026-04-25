@@ -118,9 +118,66 @@ echo "  janus root: $JANUS_ROOT"
 echo "  scratch:    $TEST_BASE"
 echo
 
+# Extended verification for backend-container-app (archetype 2):
+# Runs the full acid-test suite — typecheck, lint, test, build — on top of the
+# base verify_project checks.
+verify_container_app() {
+  local target="$1"
+  local -a errors=()
+
+  # Required shipped files
+  for f in Dockerfile infra/main.bicep ".github/workflows/deploy.yml"; do
+    if [ ! -f "$target/$f" ]; then
+      errors+=("Missing shipped file: $f")
+    fi
+  done
+
+  # Full install needed for typecheck/test/build (scaffold only ran --lockfile-only).
+  if ! ( cd "$target" && pnpm install --silent ) >/dev/null 2>&1; then
+    errors+=("pnpm install failed (extended)")
+    # Can't proceed with remaining checks without node_modules.
+    echo "FAIL: archetype 2 (extended)"
+    for e in "${errors[@]}"; do echo "  - $e"; done
+    FAIL=$((FAIL + 1))
+    return
+  fi
+
+  # pnpm typecheck
+  if ! ( cd "$target" && pnpm typecheck ) >/dev/null 2>&1; then
+    errors+=("pnpm typecheck failed")
+  fi
+
+  # pnpm lint
+  if ! ( cd "$target" && pnpm lint ) >/dev/null 2>&1; then
+    errors+=("pnpm lint failed")
+  fi
+
+  # pnpm test
+  if ! ( cd "$target" && pnpm test ) >/dev/null 2>&1; then
+    errors+=("pnpm test failed")
+  fi
+
+  # pnpm build → dist/server.js must exist
+  if ! ( cd "$target" && pnpm build ) >/dev/null 2>&1; then
+    errors+=("pnpm build failed")
+  elif [ ! -f "$target/dist/server.js" ]; then
+    errors+=("pnpm build succeeded but dist/server.js is missing")
+  fi
+
+  if [ ${#errors[@]} -eq 0 ]; then
+    echo "PASS: archetype 2 (extended)"
+    PASS=$((PASS + 1))
+  else
+    echo "FAIL: archetype 2 (extended)"
+    for e in "${errors[@]}"; do echo "  - $e"; done
+    FAIL=$((FAIL + 1))
+  fi
+}
+
 # Cover the two simplest archetypes for now. backend-functions exercises the
 # Azure-flavoured slots; generic-ts exercises the minimal path.
-for arch_num in 1 4; do
+# Archetype 2 (backend-container-app) gets a deeper acid-test as well.
+for arch_num in 1 2 4; do
   target="${TEST_BASE}/test-${arch_num}"
   echo "--- Archetype $arch_num ---"
   if ! run_scaffold "$target" "$arch_num"; then
@@ -129,6 +186,9 @@ for arch_num in 1 4; do
     continue
   fi
   verify_project "$target" "$arch_num"
+  if [ "$arch_num" -eq 2 ]; then
+    verify_container_app "$target"
+  fi
 done
 
 echo
