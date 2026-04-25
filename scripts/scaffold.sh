@@ -323,7 +323,14 @@ SETTINGS_BASE=$(jq -n \
       allow: [
         "Bash(pnpm *)",
         "Bash(npx tsc *)",
-        "Bash(gh *)",
+        "Bash(gh issue:*)",
+        "Bash(gh pr:*)",
+        "Bash(gh api:*)",
+        "Bash(gh search:*)",
+        "Bash(gh label:*)",
+        "Bash(gh run:*)",
+        "Bash(gh repo view:*)",
+        "Bash(gh workflow:*)",
         "Bash(git status:*)",
         "Bash(git diff:*)",
         "Bash(git log:*)",
@@ -339,7 +346,16 @@ SETTINGS_BASE=$(jq -n \
         "Bash(git push --force:*)",
         "Bash(git push * main)",
         "Bash(npm publish *)",
-        "Bash(pnpm publish *)"
+        "Bash(pnpm publish *)",
+        "Read(~/.ssh/**)",
+        "Read(~/.aws/**)",
+        "Read(~/.gnupg/**)",
+        "Read(.env.local)",
+        "Read(.env)",
+        "Bash(curl * | bash)",
+        "Bash(curl * | sh)",
+        "Bash(wget * | bash)",
+        "Bash(wget * | sh)"
       ]
     },
     cleanupPeriodDays: 7
