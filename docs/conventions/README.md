@@ -16,19 +16,22 @@ project's own `docs/adr/`.
 | Chapter | Topic |
 |---|---|
 | [agents-md.md](./agents-md.md) | `AGENTS.md` shape, length caps, emphasis rules |
+| [alerting.md](./alerting.md) | Alerting strategy (stub) |
 | [avm-versions.md](./avm-versions.md) | Pinned AVM module versions (refresh recipe) |
 | [azure-naming.md](./azure-naming.md) | Full Azure resource naming reference |
 | [code-style.md](./code-style.md) | Formatting, naming, imports, quotes, line width |
+| [dependencies.md](./dependencies.md) | Dependency management policy (stub) |
 | [docs-shapes.md](./docs-shapes.md) | The doc shapes, lifecycle, length caps |
 | [error-handling.md](./error-handling.md) | Domain errors returned, infra errors thrown |
+| [frontend-state-management.md](./frontend-state-management.md) | Zustand + surgical selectors (frontend) |
 | [git-workflow.md](./git-workflow.md) | Two-branch model, integration, release-please |
 | [infrastructure.md](./infrastructure.md) | AVM composition pattern, escape hatches |
 | [layering.md](./layering.md) | Routes → services → repositories direction |
 | [logging.md](./logging.md) | pino, OpenTelemetry, correlation IDs |
+| [performance.md](./performance.md) | Performance budgets (stub) |
 | [secrets.md](./secrets.md) | Four-layer secret model, KV, OIDC |
 | [security.md](./security.md) | Managed identity, default-deny, scanning |
 | [stack.md](./stack.md) | Canonical stack choices |
-| [frontend-state-management.md](./frontend-state-management.md) | Zustand + surgical selectors (frontend) |
 | [testing.md](./testing.md) | Pyramid, Vitest, Playwright, real-vs-mocked |
 
 ## Source of authority

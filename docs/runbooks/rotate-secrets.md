@@ -36,12 +36,13 @@ Rotate a secret stored in Azure Key Vault that is referenced by runtime apps (Co
      --value "<new-value>"
    ```
 
-3. **For Container Apps**: the app picks up the new version automatically on next request if secret is referenced as `keyvaultref://...?version=latest` (default). For version-pinned refs, update the revision:
+3. **For Container Apps**: a new revision is required — KV references resolve at revision creation, NOT per-request. `?version=latest` does not change this; existing revisions continue to serve the old value until replaced.
    ```bash
    az containerapp revision copy \
      --name ca-<workload>-api-<env> \
      --resource-group rg-<workload>-<env>
    ```
+   In-flight requests on prior revisions complete with the OLD secret value; only requests that land on the newly created revision use the NEW value. If the app uses `revisionMode: single`, traffic shifts atomically once the new revision becomes ready; in `multiple` mode, both can coexist while traffic weights drain.
 
 4. **For Function Apps**: restart the app to pick up new secret:
    ```bash
@@ -82,7 +83,8 @@ If verify fails:
 ## Known failure modes
 
 - **Private-endpoint Key Vault** in prod: the CLI must run from a network path with access (jumpbox, bastion, or from the app's VNet). `Forbidden` errors usually mean network, not RBAC.
-- **Cached reference**: if the app aggressively caches secrets in-process, a restart is required even with `?version=latest`. Check app's logger setup.
+- **Skipped revision creation**: forgetting step 3 leaves Container Apps serving the old secret indefinitely. `?version=latest` does NOT trigger per-request re-resolution — the reference is materialised into the revision's secrets at creation time.
+- **In-process caching**: even after a new revision serves the new value, the app may have cached the secret in-process (e.g. an SDK client constructed at startup). For long-lived clients (DB pools, external service clients), confirm the new revision actually re-instantiates them.
 
 ## Notes
 

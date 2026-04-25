@@ -192,6 +192,15 @@ output kvUri string = kv.outputs.uri
 
 Main file stays compact; wrappers encapsulate the AVM parameters.
 
+## Resource names vs module deployment names
+
+The `main.bicep` above shows module **deployment names** (`kv-deploy`, `acr-deploy`) — those are arbitrary identifiers Bicep uses to track sub-deployments. The actual Azure **resource name** is set inside the wrapper via the AVM `name` param, and must match the pattern in [`azure-naming.md`](./azure-naming.md). The Key Vault wrapper above is the worked example: the outer `name: 'kv-${workload}-${env}-deploy'` is the deployment identifier; the inner `params.name: 'kv-${workload}-${env}'` is the resource name that appears in the portal, RBAC scopes, and `az` commands. Reviewers verify the inner one.
+
+| Name | Set by | Format |
+|---|---|---|
+| Module deployment name | Bicep module declaration | `<resource>-<workload>-<env>-deploy` (any unique string) |
+| Azure resource name | AVM `name` param inside the wrapper | Per `azure-naming.md` (e.g. `kv-myapp-prod`) |
+
 ## Parameter files
 
 Use Bicep's native parameter file format (`.bicepparam`), not JSON

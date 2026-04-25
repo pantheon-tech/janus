@@ -45,12 +45,7 @@ See [docs/runbooks/rotate-secrets.md](../runbooks/rotate-secrets.md).
 
 ### Pre-existing leak protocol
 
-If a secret is committed:
-1. **Rotate the secret immediately** at the source.
-2. **Remove from git history** — `git filter-repo` or BFG.
-3. **Force-push + notify collaborators to re-clone.**
-4. **Audit access logs** on the rotated secret's origin (GitHub token audit, Azure KV audit).
-5. **Open an incident runbook** — document what happened, rotation time, access audit result.
+If a secret hits source control, follow the protocol in [`secrets.md`](./secrets.md#pre-existing-leak-protocol) — rotate, scrub history, force-push, audit, runbook.
 
 ## Network
 

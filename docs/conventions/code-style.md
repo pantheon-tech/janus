@@ -75,6 +75,30 @@ import { helper } from '../../helpers'; // ✗ use @/... alias
 export default function createOrder() { } // ✗ default export
 ```
 
+### NodeNext extensions
+
+`tsconfig.base.json` sets `module: NodeNext`. Under NodeNext (and `Node16`), import statements MUST include the file extension — and that extension is `.js`, even when the source file is `.ts`:
+
+```ts
+// Good
+import { logger } from './logger.js';
+import { ordersRepo } from '@/repositories/orders.repo.js';
+
+// Bad — fails at runtime under NodeNext (ERR_MODULE_NOT_FOUND)
+import { logger } from './logger';
+```
+
+This catches new contributors who expect bundler-style extensionless imports. Configure VS Code to add `.js` automatically:
+
+```jsonc
+// .vscode/settings.json
+{
+  "typescript.preferences.importModuleSpecifierEnding": "js"
+}
+```
+
+Type-only imports follow the same rule: `import type { X } from './types.js'`.
+
 ## TypeScript strictness
 
 `tsconfig.base.json` enforces:
@@ -91,11 +115,29 @@ export default function createOrder() { } // ✗ default export
 
 **Avoid `!` non-null assertion.** Biome warns. Use an explicit check or a helper like `assertDefined(x)`.
 
+### Strict optional properties
+
+`exactOptionalPropertyTypes` is enabled. `x?: T` means `x` may be **absent** OR have value `T` — explicitly assigning `undefined` is rejected:
+
+```ts
+type User = { name?: string };
+
+const a: User = {};                  // ok — absent
+const b: User = { name: 'Ada' };     // ok
+const c: User = { name: undefined }; // ✗ TS error
+```
+
+Implications when consuming JSON or building patches:
+
+- For deserialised JSON where a key may be missing OR present-with-`null`, model it as `name?: string | null` rather than `name?: string`.
+- To "clear" an optional field, `delete obj.name` instead of `obj.name = undefined`.
+- For partial-update DTOs accepting explicit nulls, prefer `name: string | null` (required key, value nullable) over `name?: string`.
+
 ## Hard-line rules
 
 Hard-line rules:
 
-- **500 lines per file max.** No automated enforcement — Biome has no `maxFileLines` rule as of v2.4 ([biomejs/biome#2114](https://github.com/biomejs/biome/issues/2114)). Caught in PR review; a `lefthook` hook running `find src -name '*.ts' | xargs wc -l | awk '$1 > 500'` is a reasonable optional belt-and-braces.
+- **500 lines per file max.** Manual review during PR — there is no automated enforcement (Biome has no `maxFileLines` rule as of v2.4; track upstream at <https://github.com/biomejs/biome/issues>). Reviewers reject files over 500 lines; if the work genuinely needs more, split the module before merge.
 - **50 lines per function max** (exc. JSX render fns, type defs).
 - **5 parameters per function max.** Use an options object for more.
 - **Cyclomatic complexity ≤ 10** per function.
