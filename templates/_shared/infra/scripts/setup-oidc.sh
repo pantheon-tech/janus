@@ -69,11 +69,15 @@ EOF
     echo "  Federated credential exists: $CRED_ENV_NAME"
   fi
 
-  # Federated credential 2: pull_request previews
-  CRED_PR_NAME="${APP_NAME}-pr"
-  if ! az ad app federated-credential list --id "$CLIENT_ID" --query "[?name=='${CRED_PR_NAME}'] | [0].name" -o tsv 2>/dev/null | grep -q .; then
-    echo "  Creating federated credential: $CRED_PR_NAME"
-    az ad app federated-credential create --id "$CLIENT_ID" --parameters @- <<EOF >/dev/null
+  # Federated credential 2: pull_request previews (staging only — NOT prod).
+  # The prod SP must only trust the environment:prod subject. Adding pull_request
+  # here would grant any PR-opener Contributor access on the prod resource group,
+  # which is a significant privilege escalation risk.
+  if [ "$ENV" = "staging" ]; then
+    CRED_PR_NAME="${APP_NAME}-pr"
+    if ! az ad app federated-credential list --id "$CLIENT_ID" --query "[?name=='${CRED_PR_NAME}'] | [0].name" -o tsv 2>/dev/null | grep -q .; then
+      echo "  Creating federated credential: $CRED_PR_NAME"
+      az ad app federated-credential create --id "$CLIENT_ID" --parameters @- <<EOF >/dev/null
 {
   "name": "${CRED_PR_NAME}",
   "issuer": "https://token.actions.githubusercontent.com",
@@ -81,8 +85,11 @@ EOF
   "audiences": ["api://AzureADTokenExchange"]
 }
 EOF
+    else
+      echo "  Federated credential exists: $CRED_PR_NAME"
+    fi
   else
-    echo "  Federated credential exists: $CRED_PR_NAME"
+    echo "  Skipping pull_request federated credential for $ENV (prod SP trusts environment:prod only)"
   fi
 
   # Role assignment: Contributor on the per-env RG
