@@ -42,7 +42,7 @@ TODO. Anticipated content:
 TODO. Anticipated content:
 
 - Suppressing alerts during planned deploys.
-- Per-environment severity (prod pages, staging emails, dev silent).
+- Per-environment severity (prod pages, staging emails).
 
 ## Alert hygiene
 
