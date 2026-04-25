@@ -30,6 +30,20 @@ for tool in git jq pnpm bash; do
 done
 [ -x "$MO" ] || { echo "Error: vendored mo missing at ${MO}"; exit 1; }
 
+# ─── User-scope sanity check (advisory, non-blocking) ────────────────────
+# A fresh VM with no ~/.claude/ kit means the project's hooks (session-start,
+# session-end, etc.) will run, but the user-scope hooks (Stop, PostToolUse TS
+# check) and skills (bugfix, sprint, workflow-fix, etc.) won't be present.
+# Warn the user once with a clear remediation pointer.
+if [ -x "${JANUS_ROOT}/scripts/check-user-scope.sh" ]; then
+  if ! bash "${JANUS_ROOT}/scripts/check-user-scope.sh" --quiet 2>/dev/null; then
+    echo "⚠ User-scope (~/.claude/) looks incomplete. Run \`npx @skipnz/janus bootstrap\`"
+    echo "  to install hooks, skills, rules, and baseline settings before continuing."
+    echo "  (Scaffolding will proceed; user-scope is an enhancement, not a blocker.)"
+    echo
+  fi
+fi
+
 # ─── Detect / prompt: GitHub identity ────────────────────────────────────
 GIT_USER_NAME=$(git config --global user.name 2>/dev/null || echo "")
 GIT_USER_EMAIL=$(git config --global user.email 2>/dev/null || echo "")

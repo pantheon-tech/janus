@@ -11,22 +11,61 @@ Portable project starter kit for TypeScript + Azure solo-dev work. Encodes a del
 - **`docs/plans/TEMPLATE.md`** — plan-file shape (dated, phased, with rollback).
 - **`docs/runbooks/TEMPLATE.md`** — runbook shape with staleness frontmatter.
 - **`templates/`** — per-archetype scaffolds (backend-functions, backend-container-app, frontend-vite-react, generic-ts, types-package, mcp-server, monorepo-root).
-- **`templates/_shared/`** — files common to all archetypes (biome, tsconfig base, editorconfig, GitHub workflows, etc.).
+- **`templates/_shared/`** — files common to all archetypes (biome, tsconfig base, editorconfig, GitHub workflows, hooks, skills, etc.).
+- **`user-scope/`** — Claude Code user-scope kit: hooks, skills, rules, baseline `~/.claude/settings.json` partial. Installed by `bootstrap`.
+- **`bin/janus.js`** — CLI dispatcher (used via `npx @skipnz/janus`).
 - **`scripts/scaffold.sh`** — interactive scaffolder.
+- **`scripts/setup-user-scope.sh`** — installs `user-scope/` into `~/.claude/`.
 
 ## Philosophy
 
 Every new project made from janus inherits a baseline. When it needs to diverge, it does so through an ADR in its own `docs/adr/` — documented, not silent. Conventions evolve via janus releases; projects pick up changes deliberately, not automatically.
 
-**Not** a framework. **Not** a runtime. Only scaffold + conventions + docs.
+**Not** a framework. **Not** a runtime. Only scaffold + conventions + user-scope kit.
 
 ## Usage
 
+### Fresh VM — first-time setup
+
 ```bash
-# Scaffold a new project
-cd ~
-./janus/scripts/scaffold.sh
+# Install Claude Code user-scope (~/.claude/) hooks, skills, rules, baseline settings
+npx @skipnz/janus bootstrap
 ```
+
+This installs to `~/.claude/`:
+- Hooks: `stop-memory-check.sh` (Stop gate), `ts-check-on-edit.sh` (PostToolUse TS check)
+- Skills: `bugfix`, `sprint`, `spawn-fleet`, `activity-report`, `workflow-fix`
+- Rules: `fetch-before-work`, `github-pagination`, `issue-on-discovery`, `tool-fallbacks`, `trust-user-diagnosis`, `worktree-safety`
+- Baseline `settings.json` (jq-merged with any existing one — your edits are preserved)
+- `CLAUDE.md` (overview of what the user-scope kit provides)
+
+Re-run any time with `npx @skipnz/janus bootstrap` (idempotent) or `--update`/`--force`/`--diff`/`--dry-run` for finer control.
+
+### Scaffold a new project
+
+```bash
+npx @skipnz/janus scaffold
+```
+
+Prompts for workload, archetype, GitHub org, etc. Renders a complete project tree under `~/git/<workload>/` (or path of your choice) with both `staging` and `main` branches initialized.
+
+### Verify user-scope is set up
+
+```bash
+npx @skipnz/janus check
+```
+
+Reports any missing hooks/skills/rules and points at the bootstrap command if needed.
+
+### CLI commands
+
+| Command | Purpose |
+|---|---|
+| `npx @skipnz/janus bootstrap` | Install user-scope to `~/.claude/` |
+| `npx @skipnz/janus scaffold` | Create a new project from janus templates |
+| `npx @skipnz/janus check` | Verify `~/.claude/` has the expected user-scope kit |
+| `npx @skipnz/janus update` | Alias for `bootstrap --update` |
+| `npx @skipnz/janus help` | Show usage |
 
 ## Versioning
 

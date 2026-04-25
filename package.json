@@ -1,18 +1,28 @@
 {
-  "name": "janus",
+  "name": "@skipnz/janus",
   "version": "0.1.0",
-  "description": "Portable project starter kit for TypeScript + Azure solo-dev work",
-  "private": true,
+  "description": "Portable project starter kit for TypeScript + Azure solo-dev work — scaffolds projects and bootstraps Claude Code user-scope",
   "type": "module",
-  "engines": {
-    "node": ">=24",
-    "pnpm": ">=10"
+  "bin": {
+    "janus": "./bin/janus.js"
   },
-  "packageManager": "pnpm@10.33.2",
+  "files": [
+    "bin",
+    "scripts",
+    "templates",
+    "user-scope",
+    "docs/conventions",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
-    "lint": "biome check biome.jsonc package.json scripts",
-    "format": "biome format --write biome.jsonc package.json scripts",
-    "check": "biome check --write biome.jsonc package.json scripts",
+    "lint": "biome check biome.jsonc package.json scripts bin",
+    "format": "biome format --write biome.jsonc package.json scripts bin",
+    "check": "biome check --write biome.jsonc package.json scripts bin",
+    "test": "bash tests/scaffold-smoke-test.sh && bash tests/bootstrap-smoke-test.sh",
     "prepare": "lefthook install || true"
   },
   "devDependencies": {
@@ -23,8 +33,24 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/skipnz/janus.git"
+    "url": "git+https://github.com/skipnz/janus.git"
   },
+  "homepage": "https://github.com/skipnz/janus#readme",
+  "bugs": {
+    "url": "https://github.com/skipnz/janus/issues"
+  },
+  "keywords": [
+    "scaffold",
+    "starter",
+    "typescript",
+    "azure",
+    "claude-code",
+    "monorepo",
+    "template"
+  ],
   "license": "MIT",
-  "author": "Daniel Skipper <daniel@skipper.kiwi>"
+  "author": "Daniel Skipper <daniel@skipper.kiwi>",
+  "publishConfig": {
+    "access": "public"
+  }
 }

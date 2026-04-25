@@ -66,6 +66,53 @@ jobs:
       - name: Run scaffold smoke test
         run: bash tests/scaffold-smoke-test.sh
 
+  bootstrap-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+      - name: Run bootstrap smoke test
+        run: bash tests/bootstrap-smoke-test.sh
+
+  cli-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e  # v6.4.0
+        with:
+          node-version: '20'  # minimum supported per package.json engines
+      - name: Verify CLI dispatches help
+        run: node bin/janus.js | grep -q 'janus — portable project starter kit'
+      - name: Verify check subcommand exits non-zero on empty HOME
+        run: |
+          if node bin/janus.js check --target /tmp/empty-home; then
+            echo "FAIL: check subcommand exited 0 on missing user-scope"
+            exit 1
+          fi
+      - name: Pack and inspect tarball
+        run: |
+          npm pack --silent
+          tar tzf skipnz-janus-*.tgz | grep -E '^package/(bin|scripts|templates|user-scope)' | head -20
+          # Required entries
+          for required in \
+            package/bin/janus.js \
+            package/scripts/scaffold.sh \
+            package/scripts/setup-user-scope.sh \
+            package/scripts/check-user-scope.sh \
+            package/templates/_shared/.claude/hooks/session-start.sh.tmpl \
+            package/user-scope/hooks/stop-memory-check.sh \
+            package/user-scope/skills/bugfix/SKILL.md \
+            package/user-scope/rules/fetch-before-work.md \
+            package/user-scope/CLAUDE.md \
+            package/user-scope/settings.json.partial; do
+            if ! tar tzf skipnz-janus-*.tgz | grep -q "^${required}$"; then
+              echo "FAIL: missing from tarball: $required"
+              exit 1
+            fi
+          done
+          echo "Tarball contents OK"
+
   workflows-lint:
     runs-on: ubuntu-latest
     timeout-minutes: 3
@@ -107,7 +154,7 @@ jobs:
           fail_level: error
 
   ci-pass:
-    needs: [lint, parity, scaffold-smoke, workflows-lint]
+    needs: [lint, parity, scaffold-smoke, bootstrap-smoke, cli-smoke, workflows-lint]
     runs-on: ubuntu-latest
     if: always()
     steps:
@@ -117,6 +164,8 @@ jobs:
             "${{ needs.lint.result }}" \
             "${{ needs.parity.result }}" \
             "${{ needs.scaffold-smoke.result }}" \
+            "${{ needs.bootstrap-smoke.result }}" \
+            "${{ needs.cli-smoke.result }}" \
             "${{ needs.workflows-lint.result }}"; do
             if [ "$r" != "success" ]; then
               echo "Upstream job result: $r"
