@@ -28,6 +28,18 @@ Four layers. No cross-contamination. Each secret has exactly one source of truth
 - **Federated credentials per service principal**: two — one for `environment:<env>` deploy, one for `pull_request` for what-if preview.
 - **Repo-level secrets**: only for cross-environment tooling (e.g. `CLAUDE_CODE_OAUTH_TOKEN`). Never for cloud auth.
 
+### Federated credential subjects (Azure)
+
+Each environment service principal needs federated credentials with these `subject` values exactly. The `repo:` prefix is literal and the env name is case-sensitive — mistyping fails silently with `AADSTS70021: No matching federated identity record found` at workflow runtime.
+
+| Purpose | Subject |
+|---|---|
+| Deploy from `staging` branch | `repo:<org>/<repo>:environment:staging` |
+| Deploy from `main` → prod | `repo:<org>/<repo>:environment:prod` |
+| What-if preview on PR | `repo:<org>/<repo>:pull_request` |
+
+`<org>/<repo>` is the GitHub `owner/name` pair (e.g. `skipnz/janus`). `environment:<name>` matches the GitHub Environment exactly — if the workflow uses `environment: staging`, the subject must say `environment:staging` (lowercase). The `pull_request` subject grants no environment access; it must be paired with read-only-by-default permissions in the calling workflow.
+
 ## Layer 3 — Developer-local
 
 - **Store**: `.env.local` file, gitignored.
