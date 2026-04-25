@@ -42,7 +42,7 @@ jobs:
           RESULT=$(az deployment group what-if \
             --resource-group rg-<%workload%>-${{ matrix.env }} \
             --template-file infra/main.bicep \
-            --parameters infra/parameters.${{ matrix.env }}.json \
+            --parameters infra/parameters.${{ matrix.env }}.bicepparam \
             --no-pretty-print 2>&1)
           {
             echo "result<<RESULTEOF"
