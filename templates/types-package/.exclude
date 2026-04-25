@@ -1,0 +1,14 @@
+# Paths under templates/_shared that must NOT ship in the types-package archetype.
+# One pattern per line, relative to templates/_shared/. Comments (#) and blank
+# lines are ignored. A trailing slash matches the directory and everything
+# under it; otherwise the line matches the exact relative path.
+infra/
+.github/workflows/deploy.yml.tmpl
+.github/workflows/infra-preview.yml.tmpl
+.github/workflows/claude-autofix.yml.tmpl
+# The shared runtime test file references `greet` which doesn't exist here.
+# The archetype supplies its own tests/types.test-d.ts instead.
+tests/index.test.ts
+# The shared src/index.ts has a runtime greet() function — replaced by the
+# archetype's pure-type src/index.ts.
+src/index.ts

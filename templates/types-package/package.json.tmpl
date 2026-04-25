@@ -1,0 +1,22 @@
+{{=<% %>=}}
+{
+  "private": false,
+  "main": "dist/index.d.ts",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "dts-bundle-generator -o dist/index.d.ts src/index.ts",
+    "dev": null,
+    "start": null
+  },
+  "devDependencies": {
+    "dts-bundle-generator": "~9.5.1"
+  }
+}
