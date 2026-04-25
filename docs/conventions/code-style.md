@@ -114,6 +114,24 @@ Type-only imports follow the same rule: `import type { X } from './types.js'`.
 
 **Avoid `!` non-null assertion.** Biome warns. Use an explicit check or a helper like `assertDefined(x)`.
 
+### Strict optional properties
+
+`exactOptionalPropertyTypes` is enabled. `x?: T` means `x` may be **absent** OR have value `T` — explicitly assigning `undefined` is rejected:
+
+```ts
+type User = { name?: string };
+
+const a: User = {};                  // ok — absent
+const b: User = { name: 'Ada' };     // ok
+const c: User = { name: undefined }; // ✗ TS error
+```
+
+Implications when consuming JSON or building patches:
+
+- For deserialised JSON where a key may be missing OR present-with-`null`, model it as `name?: string | null` rather than `name?: string`.
+- To "clear" an optional field, `delete obj.name` instead of `obj.name = undefined`.
+- For partial-update DTOs accepting explicit nulls, prefer `name: string | null` (required key, value nullable) over `name?: string`.
+
 ## Hard-line rules
 
 Hard-line rules:
