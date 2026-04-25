@@ -7,13 +7,13 @@ Per-archetype scaffolds. The scaffold script composes these into a new project.
 | Archetype | Purpose | Status |
 |---|---|---|
 | [`_shared/`](./_shared/) | Files common to all archetypes (biome, tsconfig, editorconfig, docs templates) | ready |
-| [`backend-functions/`](./backend-functions/) | Azure Functions v4 (Node 24) — sparse APIs, webhooks, event handlers | stub |
-| [`backend-container-app/`](./backend-container-app/) | Container App — long-running service, WebSockets, stateful | stub |
-| [`frontend-vite-react/`](./frontend-vite-react/) | Vite + React + TypeScript + MSAL → Static Web App | stub |
-| [`generic-ts/`](./generic-ts/) | Minimal TypeScript single-package (libraries, CLIs, experiments) | stub |
-| [`types-package/`](./types-package/) | Pure-types package published to GitHub Packages | stub |
-| [`mcp-server/`](./mcp-server/) | Stdio MCP server (one tool per file) | stub |
-| [`monorepo-root/`](./monorepo-root/) | pnpm workspace orchestrator (references other archetypes as packages) | stub |
+| [`backend-functions/`](./backend-functions/) | Azure Functions v4 (Node 24) — sparse APIs, webhooks, event handlers | ready |
+| [`backend-container-app/`](./backend-container-app/) | Container App — long-running service, WebSockets, stateful | ready |
+| [`frontend-vite-react/`](./frontend-vite-react/) | Vite + React + TypeScript + MSAL → Static Web App | ready |
+| [`generic-ts/`](./generic-ts/) | Minimal TypeScript single-package (libraries, CLIs, experiments) | ready |
+| [`types-package/`](./types-package/) | Pure-types package published to GitHub Packages | ready |
+| [`mcp-server/`](./mcp-server/) | Stdio MCP server (one tool per file) | ready |
+| [`monorepo-root/`](./monorepo-root/) | pnpm workspace orchestrator (references other archetypes as packages) | ready |
 
 ## Composition
 
