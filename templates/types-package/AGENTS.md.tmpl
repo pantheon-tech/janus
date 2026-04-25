@@ -1,0 +1,80 @@
+{{=<% %>=}}
+# <%workload%>
+
+## Overview
+
+<%description%>
+
+## Tech Stack
+
+| Aspect | Choice |
+|---|---|
+| Package manager | pnpm |
+| Language | TypeScript (strict) |
+| Lint + format | Biome v2 |
+| Tests | Vitest (type-level, `--typecheck`) |
+| Build | dts-bundle-generator → single flat `dist/index.d.ts` |
+| Publish | release-please (release.yml) → npm |
+| Archetype | types-package |
+
+## Commands
+
+```bash
+pnpm install
+pnpm build        # dts-bundle-generator → dist/index.d.ts
+pnpm test         # vitest --typecheck (type-level only)
+pnpm lint         # biome check
+pnpm typecheck    # tsc --noEmit
+```
+
+## Branching
+
+- `staging` — working branch
+- `main` — production (release-please publishes from here on version tags)
+
+## Structure
+
+```
+<%workload%>/
+├── src/
+│   └── index.ts        # type exports — no runtime code
+├── tests/
+│   └── types.test-d.ts # vitest type tests (--typecheck)
+├── dist/               # generated — DO NOT edit; gitignored
+│   └── index.d.ts      # flat bundled declarations
+├── docs/
+└── package.json
+```
+
+## Critical Context
+
+- **No runtime code.** This package emits only `.d.ts`. There are no `.js`,
+  `.cjs`, or `.mjs` artifacts. Consumers import types only; they bear zero
+  runtime overhead.
+- **Build tool**: `dts-bundle-generator` flattens the full declaration tree
+  into a single `dist/index.d.ts`. Run `pnpm build` before publishing.
+- **Tests are type-level.** Test files live in `tests/*.test-d.ts` and are
+  run with `vitest --typecheck`. They never execute at runtime — TypeScript
+  checks them statically during the test run.
+- **No `dev` or `start` scripts.** There is no runtime to run. The inherited
+  placeholder commands have been removed.
+- **Publishing**: `private: false` in `package.json`. release-please handles
+  version bumps and changelog; CI publishes to npm on merge to `main`.
+- **No Azure infrastructure.** This archetype has no `infra/` directory and
+  no `deploy.yml` / `infra-preview.yml` workflows.
+- **Consumers must use TypeScript.** The package ships only types; it cannot
+  be consumed from plain JavaScript.
+
+## Design Decisions
+
+- Stack inherited from janus <%template_version%> — see `docs/conventions/stack.md`.
+- See `docs/adr/` for project-specific architectural decisions.
+
+## Known Issues
+
+- <dated list>
+
+---
+
+*Last reviewed: <%date%>*
+*Template: janus <%template_version%>*
