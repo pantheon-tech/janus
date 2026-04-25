@@ -1,0 +1,91 @@
+{{=<% %>=}}
+# <%workload%>
+
+## Overview
+
+<%description%>
+
+## Workspace Topology
+
+This is a **pnpm workspace monorepo** orchestrator. All deliverable code lives in
+`packages/*`. The workspace root does not deploy itself — child packages handle
+their own deployment pipelines.
+
+```
+<%workload%>/
+├── packages/
+│   ├── example/          # starter package (replace or delete)
+│   └── <your-package>/   # add more here
+├── pnpm-workspace.yaml   # declares packages/* as workspace members
+├── package.json          # root: workspace-wide scripts (build, test, lint, typecheck)
+├── tsconfig.base.json    # base TS config — each package extends this
+├── biome.jsonc           # linting/formatting (runs at root, covers all packages)
+├── AGENTS.md             # this file
+└── README.md
+```
+
+## Tech Stack
+
+| Aspect | Choice |
+|---|---|
+| Package manager | pnpm workspace |
+| Runtime | Node <%node_version%> |
+| Language | TypeScript (strict) |
+| Lint + format | Biome v2 (root-level, applies to all packages) |
+| Tests | Vitest (per package) |
+| Archetype | monorepo-root |
+
+## Commands
+
+```bash
+pnpm install              # install all workspace packages
+pnpm dev                  # run dev in all packages (parallel)
+pnpm build                # build all packages
+pnpm test                 # test all packages
+pnpm lint                 # biome check across the entire workspace
+pnpm typecheck            # tsc --noEmit in every package
+```
+
+To operate on a single package:
+
+```bash
+pnpm --filter @<%workload%>/example test
+pnpm --filter @<%workload%>/example typecheck
+```
+
+## Branching
+
+- `staging` — working branch
+- `main` — production (CI release-please publishes from here, if enabled)
+
+## Critical Context
+
+- **No source at root**: The workspace root contains only orchestration config.
+  Do not add `src/` or `tests/` to the root — put code in `packages/*`.
+- **Each package owns its deploy**: If a package needs Azure deployment, apply
+  the appropriate janus archetype overlay inside that package directory and add
+  its CI/CD workflow to `.github/workflows/`.
+- **Biome runs at root**: The root `biome.jsonc` covers all files in the workspace.
+  Run `pnpm lint` from root, not from inside packages.
+- **tsconfig.base.json**: Each package's `tsconfig.json` should `"extends":
+  "../../tsconfig.base.json"` (adjust the relative path for deeper nesting).
+- **Adding a package**: Create `packages/<name>/package.json` with
+  `"name": "@<%workload%>/<name>"`, add appropriate `scripts.build`, `scripts.test`,
+  and `scripts.typecheck`, then run `pnpm install` at root to link it.
+- **Turborepo**: Not included by default. Add only if the number of packages
+  grows beyond ~10 or build caching becomes worthwhile.
+
+## Design Decisions
+
+- Stack inherited from janus <%template_version%> — see `docs/conventions/stack.md`.
+- See `docs/conventions/` for shared conventions.
+- See `docs/adr/` for project-specific architectural decisions.
+
+## Known Issues
+
+- <dated list>
+
+---
+
+*Last reviewed: <%date%>*
+*Template: janus <%template_version%>*

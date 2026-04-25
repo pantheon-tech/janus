@@ -1,53 +1,57 @@
 # monorepo-root archetype
 
-pnpm workspace orchestrator. References other archetypes as packages.
+pnpm workspace orchestrator. Root coordinates child packages under `packages/*`.
+Child packages handle their own deployment — the root does not deploy itself.
 
-## Status
-
-**Stub** — scaffold content TODO.
-
-## Planned structure
+## What gets scaffolded
 
 ```
-<monorepo>/
-├── apps/
-│   ├── api/                    # backend (functions or container-app archetype)
-│   └── web/                    # frontend (vite-react archetype)
+<workload>/
 ├── packages/
-│   ├── types/                  # types-package archetype (shared wire types)
-│   ├── logger/                 # shared logger setup (optional)
-│   └── errors/                 # shared error classes (optional)
-├── infra/                      # cross-service infra (shared KV, ACR, CAE)
-│   ├── main.bicep
-│   └── modules/
-├── pnpm-workspace.yaml
-├── package.json                # workspace root — scripts delegate with --filter
-├── tsconfig.base.json
-├── biome.jsonc
+│   └── example/          # starter package (src/, tests/, tsconfig.json)
+├── pnpm-workspace.yaml   # workspace: packages/*
+├── package.json          # workspace-wide scripts (build, test, lint, typecheck, dev)
+├── tsconfig.base.json    # shared TS config — packages extend this
+├── biome.jsonc           # lint/format at root (covers all packages)
+├── AGENTS.md             # workspace orientation for Claude
+├── CLAUDE.md             # project context
 ├── .github/workflows/
-│   ├── ci.yml                  # path-filtered changes job + per-package matrix
-│   └── deploy-{staging,prod}.yml
-├── AGENTS.md                   # root — links to per-package AGENTS.md
-├── CLAUDE.md
-└── README.md
+│   ├── ci.yml            # workspace-wide CI
+│   ├── claude.yml        # @claude bot
+│   ├── claude-autofix.yml
+│   ├── claude-code-review.yml
+│   ├── codeql.yml
+│   ├── docs-staleness.yml
+│   ├── issue-triage.yml
+│   └── pr-merge-cleanup.yml
+└── docs/
 ```
 
-## Planned contents
+## Excluded from _shared
 
-- **`pnpm-workspace.yaml`**: `apps/*`, `packages/*`.
-- **Root `package.json` scripts** delegate to packages via `pnpm --filter`.
-- **`.github/workflows/ci.yml`** uses `dorny/paths-filter` to detect which packages changed, runs matrix CI per package.
-- **Shared `@{{github_org}}/types`** is the contract between backend and frontend.
-- **Turborepo** is NOT included by default — add only if > 10 packages or build cache becomes useful.
+- `infra/` — children own their infra
+- `.github/workflows/deploy.yml` — children own deploy
+- `.github/workflows/infra-preview.yml` — children own infra preview
+- `src/` — root has no source
+- `tests/` — root has no tests
 
-## Composition with other archetypes
+## Workspace conventions
 
-The scaffold composes:
-1. `_shared/` overlay first (root config files).
-2. `monorepo-root/` overlay (workspace config).
-3. For each `apps/<name>/`: apply the chosen archetype (`backend-functions` or `frontend-vite-react` etc.).
-4. For each `packages/<name>/`: apply `types-package` or appropriate shared-lib template.
+- All packages live under `packages/*`.
+- Root `package.json` scripts delegate with `pnpm -r`.
+- Root `biome.jsonc` covers the entire workspace.
+- Each package has its own `tsconfig.json` that extends `../../tsconfig.base.json`.
+- Each package declares its own `vitest` and `typescript` devDependencies (pnpm
+  isolated node_modules does not hoist them from root).
+
+## Adding a child package
+
+```bash
+mkdir -p packages/mylib
+# Create packages/mylib/package.json with name @<workload>/mylib
+pnpm install   # re-links workspace
+```
 
 ## See also
 
-- `/home/skip/janus/docs/conventions/layering.md` — per-service layering inside the monorepo
+- `docs/conventions/layering.md` — per-service layering inside the workspace
