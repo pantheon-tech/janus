@@ -2,6 +2,7 @@
 title: Infrastructure (AVM Composition)
 type: reference
 last_reviewed: 2026-04-24
+owners: [@skipnz]
 ---
 
 # Infrastructure — AVM Composition Pattern
@@ -11,62 +12,72 @@ last_reviewed: 2026-04-24
 
 ```
 infra/
-├── main.bicep                    # top-level, consumes wrapper modules
-├── parameters.dev.json
-├── parameters.prod.json
-├── deploy.sh                      # wraps az deployment group create
+├── main.bicep                       # top-level, consumes wrapper modules
+├── parameters.staging.bicepparam
+├── parameters.prod.bicepparam
+├── deploy.sh                         # wraps az deployment group create
 ├── scripts/
-│   ├── setup-oidc.sh              # create SP + federated creds per env
-│   ├── populate-secrets.sh        # interactive KV seed from .env.example
-│   └── validate.sh                # bicep build + what-if
+│   ├── setup-oidc.sh                 # create SP + federated creds per env
+│   ├── populate-secrets.sh           # interactive KV seed from .env.example
+│   └── validate.sh                   # bicep build + what-if
 └── modules/
-    ├── our-keyvault.bicep         # wraps avm/res/key-vault/vault
-    ├── our-container-app.bicep    # wraps avm/res/app/container-app
-    ├── our-function-app.bicep     # wraps avm/res/web/site
-    ├── our-static-site.bicep      # wraps avm/res/web/static-site
-    ├── our-monitoring.bicep       # LAW + App Insights
-    ├── our-identity.bicep         # UAMI
-    └── our-registry.bicep         # ACR with role assignments
+    ├── our-keyvault.bicep            # wraps avm/res/key-vault/vault
+    ├── our-container-app.bicep       # wraps avm/res/app/container-app
+    ├── our-function-app.bicep        # wraps avm/res/web/site
+    ├── our-static-site.bicep         # wraps avm/res/web/static-site
+    ├── our-monitoring.bicep          # LAW + App Insights
+    ├── our-identity.bicep            # UAMI
+    └── our-registry.bicep            # ACR with role assignments
 ```
 
 ## Wrapper pattern
 
-Every janus project module follows:
+Every janus project module follows the same shape: take `workload`, `env`,
+`location`; apply janus defaults; reference a pinned AVM module. Worked
+example for Key Vault:
 
 ```bicep
-// modules/our-<resource>.bicep
+// modules/our-keyvault.bicep
+// AVM: avm/res/key-vault/vault:0.13.3
+// Last updated: 2026-04-24
 
-@description('Our standard <resource> with janus defaults')
+@description('Standard Key Vault with janus defaults')
 param workload string
 param env string
 param location string = resourceGroup().location
-
-// ... resource-specific params with defaults ...
 
 var tags = {
   workload: workload
   env: env
   managedBy: 'Bicep+AVM'
-  templateVersion: 'janus-v0.1.0'   // updated when scaffolded
+  templateVersion: 'janus-v0.1.0'
 }
 
 var isProd = env == 'prod'
 
-module <resource> 'br/public:avm/res/<path>:<version>' = {
-  name: '<resource>-${workload}-${env}-deploy'
+module kv 'br/public:avm/res/key-vault/vault:0.13.3' = {
+  name: 'kv-${workload}-${env}-deploy'
   params: {
-    name: '<naming-pattern>'
+    name: 'kv-${workload}-${env}'
     location: location
     tags: tags
-    // janus defaults applied here
+    enableRbacAuthorization: true
+    enableSoftDelete: true
+    enablePurgeProtection: isProd
+    networkAcls: {
+      defaultAction: isProd ? 'Deny' : 'Allow'
+      bypass: 'AzureServices'
+    }
     enableTelemetry: false
-    // ...
   }
 }
 
-output resourceId string = <resource>.outputs.resourceId
-// other outputs as needed
+output resourceId string = kv.outputs.resourceId
+output uri string = kv.outputs.uri
 ```
+
+The same shape applies to every other resource type — see the wrappers in
+`infra/modules/`.
 
 ## Janus defaults (baked into every wrapper)
 
@@ -82,7 +93,7 @@ output resourceId string = <resource>.outputs.resourceId
 | Purge protection | KV (prod only) |
 | Diagnostic settings to LAW | every resource that emits |
 | Managed identity | every compute resource |
-| Minimum replica count | dev: 0 (scale-to-zero); prod: 1+ |
+| Minimum replica count | staging: 0 (scale-to-zero); prod: 1+ |
 | Zone redundancy | prod only |
 | Health probes (liveness + readiness) | Container Apps, App Services |
 
@@ -91,20 +102,14 @@ output resourceId string = <resource>.outputs.resourceId
 ### Pin exact versions
 
 ```bicep
-module kv 'br/public:avm/res/key-vault/vault:0.12.0' = { ... }
+module kv 'br/public:avm/res/key-vault/vault:0.13.3' = { ... }
 ```
 
 **Never** use a range (`~`, `^`, `>=`) or omit the version.
 
-### Recorded in wrapper
-
-Each wrapper lists its pinned AVM version in a top-level comment:
-
-```bicep
-// modules/our-keyvault.bicep
-// AVM: avm/res/key-vault/vault:0.12.0
-// Last updated: 2026-04-24
-```
+The canonical version table lives in
+[`./avm-versions.md`](./avm-versions.md). Each wrapper records its pinned
+version in a top-level comment too — keep the two in sync.
 
 ### Dependabot config
 
@@ -127,9 +132,9 @@ When AVM doesn't fit, options in order of preference:
 If AVM's defaults are wrong for your case, your wrapper overrides them:
 
 ```bicep
-module storage 'br/public:avm/res/storage/storage-account:0.15.0' = {
+module storage 'br/public:avm/res/storage/storage-account:0.32.0' = {
   params: {
-    // Override AVM default of Standard_RAGRS with LRS for dev
+    // Override AVM default for staging
     skuName: env == 'prod' ? 'Standard_RAGRS' : 'Standard_LRS'
     // ...
   }
@@ -141,7 +146,7 @@ module storage 'br/public:avm/res/storage/storage-account:0.15.0' = {
 Use AVM for the base, add extension resources alongside:
 
 ```bicep
-module kv 'br/public:avm/res/key-vault/vault:0.12.0' = { ... }
+module kv 'br/public:avm/res/key-vault/vault:0.13.3' = { ... }
 
 resource kvExtra 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
   parent: /* reference AVM-created KV */
@@ -152,22 +157,13 @@ resource kvExtra 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
 
 ### Option 3: Hand-roll the resource (documented)
 
-If AVM genuinely doesn't cover a case, hand-roll and write an ADR:
-
-```
-docs/adr/0N-bespoke-<resource>.md
-
-Status: accepted
-Context: AVM module avm/res/X does not support Y as of version 0.12.0
-Decision: Hand-roll Microsoft.X resource with desired Y behaviour.
-Consequences: Must manually track Microsoft best-practice changes.
-```
-
-Revisit quarterly to see if AVM caught up.
+If AVM genuinely doesn't cover a case, hand-roll and write a project ADR
+documenting the bespoke choice. Revisit quarterly to see if AVM caught up.
 
 ### Option 4: Fork AVM module inline
 
-Last resort. Copy the AVM module source into `infra/modules/forked-<name>.bicep` and modify. Loses upstream security fixes. Document loudly.
+Last resort. Copy the AVM module source into `infra/modules/forked-<name>.bicep`
+and modify. Loses upstream security fixes. Document loudly.
 
 ## Example `main.bicep`
 
@@ -179,80 +175,41 @@ targetScope = 'resourceGroup'
 @maxLength(12)
 param workload string
 
-@allowed(['dev', 'staging', 'prod'])
+@allowed(['staging', 'prod'])
 param env string
 
 param location string = resourceGroup().location
 
-// ─── Identity & Observability ──────────────────────────────────────
-module identity './modules/our-identity.bicep' = {
-  name: 'id-deploy'
-  params: { workload: workload, env: env, location: location }
-}
-
-module monitoring './modules/our-monitoring.bicep' = {
-  name: 'monitoring-deploy'
-  params: { workload: workload, env: env, location: location }
-}
-
-// ─── Secrets ───────────────────────────────────────────────────────
-module kv './modules/our-keyvault.bicep' = {
-  name: 'kv-deploy'
-  params: {
-    workload: workload
-    env: env
-    location: location
-    workspaceResourceId: monitoring.outputs.workspaceResourceId
-    identityPrincipalId: identity.outputs.principalId
-  }
-}
-
-// ─── Registry ──────────────────────────────────────────────────────
-module acr './modules/our-registry.bicep' = {
-  name: 'acr-deploy'
-  params: {
-    workload: workload
-    env: env
-    location: location
-    identityPrincipalId: identity.outputs.principalId
-  }
-}
-
-// ─── Compute ───────────────────────────────────────────────────────
-module api './modules/our-container-app.bicep' = {
-  name: 'ca-api-deploy'
-  params: {
-    workload: workload
-    env: env
-    location: location
-    appName: 'api'
-    registryLoginServer: acr.outputs.loginServer
-    identityResourceId: identity.outputs.resourceId
-    keyVaultUri: kv.outputs.uri
-    appInsightsConnectionString: monitoring.outputs.appInsightsConnectionString
-  }
-}
+module identity   './modules/our-identity.bicep'      = { name: 'id-deploy',         params: { workload: workload, env: env, location: location } }
+module monitoring './modules/our-monitoring.bicep'    = { name: 'monitoring-deploy', params: { workload: workload, env: env, location: location } }
+module kv         './modules/our-keyvault.bicep'      = { name: 'kv-deploy',         params: { workload: workload, env: env, location: location, workspaceResourceId: monitoring.outputs.workspaceResourceId, identityPrincipalId: identity.outputs.principalId } }
+module acr        './modules/our-registry.bicep'      = { name: 'acr-deploy',        params: { workload: workload, env: env, location: location, identityPrincipalId: identity.outputs.principalId } }
+module api        './modules/our-container-app.bicep' = { name: 'ca-api-deploy',     params: { workload: workload, env: env, location: location, appName: 'api', registryLoginServer: acr.outputs.loginServer, identityResourceId: identity.outputs.resourceId, keyVaultUri: kv.outputs.uri, appInsightsConnectionString: monitoring.outputs.appInsightsConnectionString } }
 
 output apiFqdn string = api.outputs.fqdn
 output kvUri string = kv.outputs.uri
 ```
 
-Main file is ~50 lines; wrappers encapsulate the AVM parameters.
+Main file stays compact; wrappers encapsulate the AVM parameters.
 
-## Deploy flow
+## Parameter files
 
-```bash
-# 1. Validate (local or CI)
-bash infra/scripts/validate.sh dev    # runs bicep build + what-if
+Use Bicep's native parameter file format (`.bicepparam`), not JSON
+`parameters.X.json`:
 
-# 2. Deploy (CI via workflow, with OIDC)
-bash infra/deploy.sh dev
-
-# 3. Health check
-curl https://<fqdn>/health
+```bicep
+// parameters.staging.bicepparam
+using './main.bicep'
+param workload = 'myapp'
+param env = 'staging'
+param location = 'australiaeast'
 ```
 
-## Testing infra changes
+## Deploy and testing
+
+For the deploy flow, see [`../runbooks/deploy.md`](../runbooks/deploy.md).
+
+PR-level safety:
 
 - **what-if on PR**: `.github/workflows/infra-preview.yml` runs `az deployment group what-if` on any PR touching `infra/**`.
 - **Nightly drift check**: `.github/workflows/infra-drift.yml` runs what-if against current state on `main` — opens an issue if a non-empty diff appears.
