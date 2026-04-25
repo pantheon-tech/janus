@@ -41,4 +41,4 @@ Stdio MCP server — one tool per file, registered via a central registry.
 ## See also
 
 - [MCP Spec](https://modelcontextprotocol.io/specification)
-- [aex-mcp](https://github.com/Aotearoa-Energy/aex) — reference implementation with 43 tools
+- [Anthropic MCP SDKs](https://github.com/modelcontextprotocol)
