@@ -23,7 +23,7 @@ Every new project made from janus inherits a baseline. When it needs to diverge,
 ## Usage
 
 ```bash
-# Scaffold a new project (when scaffold.sh is implemented)
+# Scaffold a new project
 cd ~
 ./janus/scripts/scaffold.sh
 ```
