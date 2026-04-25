@@ -21,9 +21,11 @@ Minimal TypeScript single-package — libraries, CLIs, scripts, experiments, int
 
 ## Status
 
-**Stub** — full scaffold content TODO. The `_shared/` overlay covers most of the bases; this archetype's role is to opt OUT of cloud/deploy bits the other archetypes opt in to.
+**Ready.** Scaffolded projects install, typecheck, lint, test, and build out of the box.
+The archetype's job is to opt OUT of the cloud/deploy bits the other archetypes opt in to,
+and add `tsx` (dev) + `tsup` (build) on top of the shared base.
 
-## Planned structure
+## Structure
 
 ```
 <package>/

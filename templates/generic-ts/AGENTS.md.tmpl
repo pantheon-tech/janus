@@ -1,0 +1,70 @@
+{{=<% %>=}}
+# <%workload%>
+
+## Overview
+
+<%description%>
+
+## Tech Stack
+
+| Aspect | Choice |
+|---|---|
+| Package manager | pnpm |
+| Runtime | Node <%node_version%> |
+| Language | TypeScript (strict) |
+| Lint + format | Biome v2 |
+| Tests | Vitest |
+| Dev runner | tsx |
+| Build | tsup (ESM + CJS + .d.ts) |
+| Archetype | generic-ts |
+
+## Commands
+
+```bash
+pnpm install
+pnpm dev          # tsx watch src/index.ts
+pnpm build        # tsup → dist/
+pnpm start        # node dist/index.js
+pnpm test         # vitest
+pnpm lint         # biome check
+pnpm typecheck    # tsc --noEmit
+```
+
+## Branching
+
+- `staging` — working branch
+- `main` — production (CI release-please publishes from here, if enabled)
+
+## Structure
+
+```
+<%workload%>/
+├── src/
+│   └── index.ts
+├── tests/
+│   └── index.test.ts
+├── docs/
+└── package.json
+```
+
+## Critical Context
+
+- This is a `generic-ts` archetype: no infra, no Azure, no deploy pipeline.
+  `release.yml` (release-please) is the only ship mechanism, and it's opt-in
+  (delete the workflow if you don't want releases).
+- If this project later needs a cloud deploy target, migrate to
+  `backend-functions` or `backend-container-app` and capture the move in an ADR.
+
+## Design Decisions
+
+- Stack inherited from janus <%template_version%> — see `docs/conventions/stack.md`.
+- See `docs/adr/` for project-specific architectural decisions.
+
+## Known Issues
+
+- <dated list>
+
+---
+
+*Last reviewed: <%date%>*
+*Template: janus <%template_version%>*
