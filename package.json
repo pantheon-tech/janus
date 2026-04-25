@@ -10,9 +10,9 @@
   },
   "packageManager": "pnpm@10.33.2",
   "scripts": {
-    "lint": "biome check .",
-    "format": "biome format --write .",
-    "check": "biome check --write .",
+    "lint": "biome check biome.jsonc package.json scripts",
+    "format": "biome format --write biome.jsonc package.json scripts",
+    "check": "biome check --write biome.jsonc package.json scripts",
     "prepare": "lefthook install || true"
   },
   "devDependencies": {
