@@ -16,7 +16,9 @@ Four layers. No cross-contamination. Each secret has exactly one source of truth
   - Container Apps: `keyvaultref://` references in `secrets:` block.
   - Function Apps: Key Vault references in app settings via managed identity.
   - APIM: named values backed by Key Vault.
-- **Rotation**: change in Key Vault. Container Apps auto-refresh; Function Apps need restart.
+- **Rotation**: change in Key Vault, then trigger the consumer to re-resolve.
+  - **Container Apps**: KV references resolve at **revision creation**, not per-request — even with `?version=latest`. Rotation requires `az containerapp update` (or `revision copy`) to create a new revision. In-flight requests on prior revisions complete with the OLD value; only new revisions see the NEW value.
+  - **Function Apps**: app restart re-reads KV references.
 - **Network (prod)**: `defaultAction: Deny` + private endpoint. The `AzureServices` bypass does not cover Container Apps.
 
 ## Layer 2 — CI / CD
