@@ -14,7 +14,7 @@ A React 19 + Vite 7 + Tailwind v4 + MSAL single-page application scaffolded to d
 | Bundler | Vite | `~7.3.0` |
 | Framework | React | `~19.2.0` |
 | Styling | Tailwind CSS v4 + `@tailwindcss/vite` | `~4.2.0` |
-| Auth | `@azure/msal-browser` + `@azure/msal-react` | `~5.1.0` / `~3.0.0` |
+| Auth | `@azure/msal-browser` + `@azure/msal-react` | `~5.8.0` / `~5.3.0` |
 | State | Zustand | `~5.0.5` |
 | Tests | Vitest + jsdom + @testing-library/react | `~4.1.5` / `~26.0.0` / `~16.0.0` |
 | Lint | Biome v2 (inherited from `_shared`) | `~2.4.13` |
