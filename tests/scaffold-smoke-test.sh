@@ -118,9 +118,9 @@ echo "  janus root: $JANUS_ROOT"
 echo "  scratch:    $TEST_BASE"
 echo
 
-# Cover the two simplest archetypes for now. backend-functions exercises the
-# Azure-flavoured slots; generic-ts exercises the minimal path.
-for arch_num in 1 4; do
+# Cover core archetypes. backend-functions exercises Azure-flavoured slots;
+# frontend-vite-react exercises React/Vite/MSAL; generic-ts exercises the minimal path.
+for arch_num in 1 3 4; do
   target="${TEST_BASE}/test-${arch_num}"
   echo "--- Archetype $arch_num ---"
   if ! run_scaffold "$target" "$arch_num"; then
