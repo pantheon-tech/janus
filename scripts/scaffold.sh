@@ -198,11 +198,38 @@ mkdir -p "$TARGET_DIR"
 cd "$TARGET_DIR"
 
 SHARED="${JANUS_ROOT}/templates/_shared"
+ARCH_DIR="${JANUS_ROOT}/templates/${ARCHETYPE}"
+
+# Build an exclude predicate from <archetype>/.exclude. Each non-comment line
+# is a path (relative to _shared/) to drop. A trailing slash matches the
+# directory and everything under it; otherwise it's an exact-path match.
+# Returns 0 (skip) if the relative path is excluded, 1 (keep) otherwise.
+is_excluded() {
+  local rel="$1"
+  [ -f "${ARCH_DIR}/.exclude" ] || return 1
+  local pattern
+  while IFS= read -r pattern || [ -n "$pattern" ]; do
+    # Strip CR (in case the file has CRLF), trim whitespace, skip blanks/comments.
+    pattern="${pattern%$'\r'}"
+    pattern="${pattern#"${pattern%%[![:space:]]*}"}"
+    pattern="${pattern%"${pattern##*[![:space:]]}"}"
+    [ -z "$pattern" ] && continue
+    [[ "$pattern" == \#* ]] && continue
+    if [[ "$pattern" == */ ]]; then
+      # Directory: match this path or anything underneath.
+      [[ "$rel" == "${pattern%/}" || "$rel" == "${pattern}"* ]] && return 0
+    else
+      [[ "$rel" == "$pattern" ]] && return 0
+    fi
+  done < "${ARCH_DIR}/.exclude"
+  return 1
+}
 
 # 1. Copy verbatim files (everything not ending in .tmpl)
 #    Done with cp + find — no rsync dependency.
 ( cd "$SHARED" && find . -type f ! -name '*.tmpl' -print0 | while IFS= read -r -d '' f; do
     rel="${f#./}"
+    if is_excluded "$rel"; then continue; fi
     dest="${TARGET_DIR}/${rel}"
     mkdir -p "$(dirname "$dest")"
     cp "$f" "$dest"
@@ -212,6 +239,7 @@ SHARED="${JANUS_ROOT}/templates/_shared"
 # 2. Render .tmpl files with substitution, dropping the .tmpl suffix
 while IFS= read -r tmpl; do
   rel="${tmpl#${SHARED}/}"
+  if is_excluded "$rel"; then continue; fi
   out="${rel%.tmpl}"
   render_tmpl "$tmpl" "$out"
 done < <(find "$SHARED" -name '*.tmpl' -type f)
@@ -220,10 +248,10 @@ done < <(find "$SHARED" -name '*.tmpl' -type f)
 #     may contain:
 #       - .env.example      → appended to the shared minimal .env.example
 #       - package.json.tmpl → merged over the shared package.json (jq deep merge)
+#       - .exclude          → list of _shared/ paths to skip (handled in steps 1+2)
 #       - any other files   → copied verbatim, with .tmpl suffix stripped + rendered
 #     Anything not listed (README.md, etc.) is rendered through mo when .tmpl,
 #     copied verbatim otherwise.
-ARCH_DIR="${JANUS_ROOT}/templates/${ARCHETYPE}"
 if [ -d "$ARCH_DIR" ]; then
   # 2b.i — .env.example overlay (append to the shared minimal one)
   if [ -f "${ARCH_DIR}/.env.example" ]; then
@@ -243,12 +271,23 @@ if [ -d "$ARCH_DIR" ]; then
     rm -f "$overlay_rendered"
   fi
 
+  # 2b.ii.b — if the archetype excludes infra/, the inherited deploy:* scripts
+  #           reference an `infra/deploy.sh` that won't exist. Strip them so the
+  #           merged package.json is internally consistent.
+  if is_excluded 'infra/'; then
+    pruned="$(mktemp)"
+    jq 'if .scripts then .scripts |= del(."deploy:staging", ."deploy:prod") else . end' \
+      "${TARGET_DIR}/package.json" > "$pruned"
+    mv "$pruned" "${TARGET_DIR}/package.json"
+  fi
+
   # 2b.iii — copy/render everything else from the archetype directory.
   #          The archetype's own README.md at the root is META documentation
   #          (about the archetype) — never shipped into scaffolded projects.
   ( cd "$ARCH_DIR" && find . -type f \
       ! -name '.env.example' \
       ! -name 'package.json.tmpl' \
+      ! -name '.exclude' \
       ! -path './README.md' \
       -print0 | while IFS= read -r -d '' f; do
         rel="${f#./}"
