@@ -87,20 +87,15 @@ jobs:
           MARKER: ${{ steps.cooldown.outputs.marker }}
           LOG: ${{ steps.logs.outputs.log }}
         run: |
-          BODY=$(cat <<EOF
-          @claude CI failed on PR #$PR_NUMBER. Please review the logs and push a fix to the PR branch.
-
-          **Run**: $RUN_URL
-
-          **Failed step output (truncated)**:
-          \`\`\`
-          $LOG
-          \`\`\`
-
-          $MARKER
-          EOF
-          )
+          # Use a temp file to avoid heredoc EOF-injection risk: if $LOG contains
+          # a line starting with the heredoc terminator, the shell would truncate
+          # the body and treat the remainder as commands. Writing to a file and
+          # using --body-file eliminates that attack surface entirely.
+          TMPBODY=$(mktemp)
+          trap 'rm -f "$TMPBODY"' EXIT
+          printf '@claude CI failed on PR #%s. Please review the logs and push a fix to the PR branch.\n\n**Run**: %s\n\n**Failed step output (truncated)**:\n```\n%s\n```\n\n%s\n' \
+            "$PR_NUMBER" "$RUN_URL" "$LOG" "$MARKER" > "$TMPBODY"
           gh issue create \
             --title "[claude-fix] CI failure on PR #$PR_NUMBER" \
-            --body "$BODY" \
+            --body-file "$TMPBODY" \
             --label "claude-fix,ci-failure"

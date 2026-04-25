@@ -47,9 +47,13 @@ module kv 'br/public:avm/res/key-vault/vault:0.13.3' = {
     enablePurgeProtection: enablePurgeProtection
     softDeleteRetentionInDays: 90
     sku: 'standard'
-    publicNetworkAccess: 'Enabled'
+    // prod: lock down network access; AzureServices bypass does not cover Container Apps.
+    // NOTE: prod deployments require a private endpoint set up out-of-band before any
+    // non-AzureServices traffic (including Container Apps) can reach this Key Vault.
+    // TODO: add private-endpoint subresource conditionally for prod when scope allows.
+    publicNetworkAccess: env == 'prod' ? 'Disabled' : 'Enabled'
     networkAcls: {
-      defaultAction: 'Allow'
+      defaultAction: env == 'prod' ? 'Deny' : 'Allow'
       bypass: 'AzureServices'
     }
     diagnosticSettings: [
