@@ -274,7 +274,13 @@ if [ -d "$ARCH_DIR" ]; then
   # 2b.ii.b — if the archetype excludes infra/, the inherited deploy:* scripts
   #           reference an `infra/deploy.sh` that won't exist. Strip them so the
   #           merged package.json is internally consistent.
-  if is_excluded 'infra/'; then
+  # infra_excluded(): explicit check — reads .exclude directly for the 'infra/'
+  # line rather than routing through is_excluded(), which takes a path argument
+  # not a pattern string.
+  infra_excluded() {
+    [ -f "${ARCH_DIR}/.exclude" ] && grep -qxF 'infra/' "${ARCH_DIR}/.exclude"
+  }
+  if infra_excluded; then
     pruned="$(mktemp)"
     jq 'if .scripts then .scripts |= del(."deploy:staging", ."deploy:prod") else . end' \
       "${TARGET_DIR}/package.json" > "$pruned"
@@ -358,8 +364,12 @@ fi
 # 5. Generate pnpm lockfile so the first push to CI does not fail on
 #    `pnpm install --frozen-lockfile`.
 if [ -f package.json ]; then
-  pnpm install --lockfile-only --silent 2>/dev/null || \
-    pnpm install --lockfile-only || true
+  if ! pnpm install --lockfile-only --silent 2>/dev/null \
+    && ! pnpm install --lockfile-only; then
+    echo "WARNING: pnpm install --lockfile-only failed — pnpm-lock.yaml not generated." >&2
+    echo "  The first CI push will fail. Investigate before pushing." >&2
+    exit 1
+  fi
 fi
 
 # 6. Init git on staging (working branch); also create main pointing at the
