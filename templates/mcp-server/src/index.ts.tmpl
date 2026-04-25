@@ -1,3 +1,4 @@
+{{=<% %>=}}
 #!/usr/bin/env node
 /**
  * Stdio MCP server entry point.
@@ -12,7 +13,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { echoInputSchema, handleEcho } from './echo.js';
 
 const server = new McpServer({
-  name: 'mcp-server',
+  name: '<%workload%>',
   version: '0.0.0',
 });
 
