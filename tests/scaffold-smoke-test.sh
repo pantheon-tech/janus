@@ -118,10 +118,48 @@ echo "  janus root: $JANUS_ROOT"
 echo "  scratch:    $TEST_BASE"
 echo
 
-# Cover key archetypes. backend-functions exercises Azure-flavoured slots;
-# generic-ts exercises the minimal path; types-package exercises the pure-types
-# no-runtime path.
-for arch_num in 1 4 5; do
+# Extended verification for backend-container-app (archetype 2):
+# full acid-test (typecheck/lint/test/build) on top of base verify_project.
+verify_container_app() {
+  local target="$1"
+  local -a errors=()
+
+  for f in Dockerfile infra/main.bicep ".github/workflows/deploy.yml"; do
+    [ -f "$target/$f" ] || errors+=("Missing shipped file: $f")
+  done
+
+  if ! ( cd "$target" && pnpm install --silent ) >/dev/null 2>&1; then
+    errors+=("pnpm install failed (extended)")
+    echo "FAIL: archetype 2 (extended)"
+    for e in "${errors[@]}"; do echo "  - $e"; done
+    FAIL=$((FAIL + 1))
+    return
+  fi
+
+  ( cd "$target" && pnpm typecheck >/dev/null 2>&1 ) || errors+=("pnpm typecheck failed")
+  ( cd "$target" && pnpm lint >/dev/null 2>&1 ) || errors+=("pnpm lint failed")
+  ( cd "$target" && pnpm test >/dev/null 2>&1 ) || errors+=("pnpm test failed")
+  if ! ( cd "$target" && pnpm build >/dev/null 2>&1 ); then
+    errors+=("pnpm build failed")
+  elif [ ! -f "$target/dist/server.js" ]; then
+    errors+=("pnpm build succeeded but dist/server.js is missing")
+  fi
+
+  if [ ${#errors[@]} -eq 0 ]; then
+    echo "PASS: archetype 2 (extended)"; PASS=$((PASS + 1))
+  else
+    echo "FAIL: archetype 2 (extended)"
+    for e in "${errors[@]}"; do echo "  - $e"; done
+    FAIL=$((FAIL + 1))
+  fi
+}
+
+# Cover key archetypes:
+#   1 backend-functions  — Azure-flavoured slots
+#   2 backend-container-app  — extended acid test
+#   4 generic-ts  — minimal path
+#   5 types-package  — pure-types, no runtime
+for arch_num in 1 2 4 5; do
   target="${TEST_BASE}/test-${arch_num}"
   echo "--- Archetype $arch_num ---"
   if ! run_scaffold "$target" "$arch_num"; then
@@ -130,6 +168,9 @@ for arch_num in 1 4 5; do
     continue
   fi
   verify_project "$target" "$arch_num"
+  if [ "$arch_num" -eq 2 ]; then
+    verify_container_app "$target"
+  fi
 done
 
 echo

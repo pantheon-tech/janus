@@ -1,57 +1,66 @@
 # backend-container-app archetype
 
-Container App for long-running services — WebSockets, pub/sub, stateful, predictable latency.
+Long-running Express 5 + ws server — WebSockets, stateful workloads, predictable latency.
+Deploys as an Azure Container App.
+
+## When to pick this
+
+- You need a persistent server (WebSockets, SSE, long-poll, connection-pool fan-out).
+- Workload is stateful or latency-sensitive in a way Functions cannot accommodate.
+- You need full control over the process lifecycle (custom signal handling, connection draining).
+- You want predictable scaling with minimum-replica guarantees.
+
+Do not pick this for short-lived APIs that are invoked infrequently — `backend-functions` is cheaper at low traffic.
+
+## What it ships
+
+- **`src/server.ts`** — Express 5 app + ws server. GET /health → `{status:'ok'}`, ws upgrade on /ws (echo stub), pino structured logging, SIGTERM graceful shutdown.
+- **`tests/server.test.ts`** — supertest /health assertion (runs under Vitest).
+- **`Dockerfile`** — multi-stage Node 24 slim. Builder stage compiles via tsup; runtime stage runs as non-root user. EXPOSE 3000.
+- **`infra/main.bicep`** — AVM-composed: identity → LAW → AppInsights → KV → ACR → Container App.
+- **`.github/workflows/deploy.yml`** — build image, push to ACR, update Container App revision. Branch-aware: staging push → staging env; main push → prod (gated).
+- Full shared base: Biome v2, Vitest, lefthook, Conventional Commits, CI, CodeQL, issue triage.
 
 ## Status
 
-**Stub** — scaffold content TODO.
+**Ready.** Scaffolded projects install, typecheck, lint, test, and build out of the box.
 
-## Planned structure
+## Structure
 
 ```
-<project>/
+<workload>/
 ├── src/
-│   ├── app.ts                   # Fastify / Express / ws bootstrap
-│   ├── routes/                  # HTTP route groups
-│   ├── ws/                      # WebSocket connection + message routing (optional)
-│   ├── services/                # business logic
-│   ├── repositories/            # data access
-│   ├── middleware/              # auth, correlation, error handling
-│   ├── schemas/                 # zod boundaries
-│   ├── lib/                     # infrastructure
-│   ├── domain/                  # pure types
-│   ├── events/                  # pub/sub handlers (Event Grid / Service Bus)
-│   └── main.ts                  # entry — config → app → listen → shutdown
+│   └── server.ts          # HTTP + WebSocket bootstrap, health route, graceful shutdown
 ├── tests/
+│   └── server.test.ts     # supertest /health
 ├── Dockerfile
-├── docker-compose.yml           # local dev (Cosmos emulator, Redis, etc.)
-├── package.json
-├── tsconfig.json
 ├── infra/
-│   ├── main.bicep               # ACR, CAE, Container App via AVM
-│   ├── modules/
-│   └── scripts/
-├── .github/workflows/
-│   ├── ci.yml
-│   ├── deploy-staging.yml       # docker build → ACR push → revision create
-│   ├── deploy-prod.yml
-│   ├── infra-preview.yml
-│   └── rollback.yml             # revision activate — image-swap model
+│   ├── main.bicep
+│   ├── modules/           # identity, monitoring, keyvault, registry, container-app
+│   └── scripts/           # setup-oidc.sh, health-check.sh, populate-secrets.sh
+├── .github/
+│   └── workflows/
+│       ├── ci.yml
+│       ├── deploy.yml
+│       ├── infra-preview.yml
+│       └── claude-autofix.yml
+├── docs/
 ├── AGENTS.md
 ├── CLAUDE.md
-└── README.md
+├── README.md
+├── package.json
+├── tsconfig.json
+├── biome.jsonc
+└── vitest.config.ts
 ```
 
-## Planned contents
+## Promotion path
 
-- **`Dockerfile`** — multi-stage Node 20 Alpine, non-root user, healthcheck.
-- **`src/main.ts`** — graceful shutdown on SIGTERM (drain connections).
-- **`src/ws/`** — WebSocket connection lifecycle + message router (optional, only for WS workloads).
-- **`infra/main.bicep`** — AVM-composed: identity → LAW → AppInsights → KV → ACR → CAE → Container App (single-revision mode, image-swap rollback).
-- **`.github/workflows/deploy-{staging,prod}.yml`** — build image, push to ACR, update Container App revision.
-- **`.github/workflows/rollback.yml`** — swap image tag to previous via `az containerapp update`.
+This archetype already ships full Azure infra + deploy pipeline. If the workload later
+needs a frontend, add `frontend-vite-react` as a sibling package in a `monorepo-root` workspace.
 
 ## See also
 
-- `/home/skip/janus/docs/conventions/infrastructure.md`
-- `/home/skip/janus/docs/conventions/avm-versions.md`
+- `docs/conventions/stack.md` — canonical version table
+- `docs/conventions/infrastructure.md` — Bicep / AVM patterns
+- `docs/conventions/avm-versions.md` — pinned AVM module versions
