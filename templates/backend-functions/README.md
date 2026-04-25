@@ -62,6 +62,14 @@ v4 is the current (default) Node.js programming model for Azure Functions. Key p
 - **Handler isolation** — export the handler function separately from the `app.http()` call so
   Vitest can import and test it without triggering registration side effects.
 
+## Status
+
+Ready — smoke test passes. All archetype files, infra, and workflows are scaffolded.
+
+## Node version note
+
+`local.settings.json.example` sets `FUNCTIONS_NODE_RUNTIME: "22"`. This is intentional: Azure Functions currently supports Node.js up to v22 LTS for the deployed runtime. The janus project baseline requires `node >= 24` for local development (tooling, type generation, etc.), which is fine — the `FUNCTIONS_NODE_RUNTIME` setting only governs what the Function App runtime uses in Azure. Run `node --version` locally and expect v24+; the deployed app runs on Node 22.
+
 ## Local dev prerequisites
 
 ```bash
