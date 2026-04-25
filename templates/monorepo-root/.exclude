@@ -1,0 +1,9 @@
+# Paths under templates/_shared that must NOT ship in the monorepo-root archetype.
+# One pattern per line, relative to templates/_shared/. Comments (#) and blank
+# lines are ignored. A trailing slash matches the directory and everything
+# under it; otherwise the line matches the exact relative path.
+infra/
+.github/workflows/deploy.yml.tmpl
+.github/workflows/infra-preview.yml.tmpl
+src/
+tests/

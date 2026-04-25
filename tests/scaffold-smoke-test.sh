@@ -9,6 +9,14 @@
 #   - Workflow YAML that fails to parse
 #   - pnpm install --lockfile-only that fails in the rendered project
 #
+# Archetype 7 (monorepo-root) also verifies:
+#   - pnpm install (full workspace install) succeeds
+#   - pnpm typecheck passes across all workspace packages
+#   - pnpm lint passes across the workspace
+#   - pnpm test passes across all workspace packages
+#   - packages/example/ exists with src/, tests/, package.json
+#   - pnpm-workspace.yaml exists
+#
 # CI fails on any of these. Run locally with:  bash tests/scaffold-smoke-test.sh
 
 set -euo pipefail
@@ -113,6 +121,56 @@ verify_project() {
   fi
 }
 
+# Extra verification for monorepo-root (archetype 7): full workspace install,
+# typecheck, lint, test, and required file/dir checks.
+verify_monorepo() {
+  local target="$1"
+  local -a errors=()
+
+  # pnpm-workspace.yaml must exist.
+  if [ ! -f "$target/pnpm-workspace.yaml" ]; then
+    errors+=("pnpm-workspace.yaml missing")
+  fi
+
+  # packages/example/ must exist with the expected files.
+  for f in packages/example/package.json packages/example/src/index.ts \
+            packages/example/tests/index.test.ts packages/example/tsconfig.json; do
+    if [ ! -f "$target/$f" ]; then
+      errors+=("Required file missing: $f")
+    fi
+  done
+
+  # Full workspace install (not --lockfile-only — workspaces need real install
+  # for typecheck/test to see package node_modules).
+  if ! ( cd "$target" && pnpm install --frozen-lockfile=false --silent ) >/dev/null 2>&1; then
+    errors+=("pnpm install failed")
+  fi
+
+  # typecheck across all packages.
+  if ! ( cd "$target" && pnpm typecheck ) >/dev/null 2>&1; then
+    errors+=("pnpm typecheck failed")
+  fi
+
+  # lint across workspace.
+  if ! ( cd "$target" && pnpm lint ) >/dev/null 2>&1; then
+    errors+=("pnpm lint failed")
+  fi
+
+  # test across all packages.
+  if ! ( cd "$target" && pnpm test ) >/dev/null 2>&1; then
+    errors+=("pnpm test failed")
+  fi
+
+  if [ ${#errors[@]} -eq 0 ]; then
+    echo "PASS: archetype 7 (monorepo-root workspace checks)"
+    PASS=$((PASS + 1))
+  else
+    echo "FAIL: archetype 7 (monorepo-root workspace checks)"
+    for e in "${errors[@]}"; do echo "  - $e"; done
+    FAIL=$((FAIL + 1))
+  fi
+}
+
 echo "Smoke-testing janus scaffold..."
 echo "  janus root: $JANUS_ROOT"
 echo "  scratch:    $TEST_BASE"
@@ -130,6 +188,17 @@ for arch_num in 1 4; do
   fi
   verify_project "$target" "$arch_num"
 done
+
+# Archetype 7: monorepo-root — run structural checks + workspace functional checks.
+echo "--- Archetype 7 ---"
+target="${TEST_BASE}/test-7"
+if ! run_scaffold "$target" 7; then
+  echo "FAIL: archetype 7 — scaffold script errored"
+  FAIL=$((FAIL + 1))
+else
+  verify_project "$target" 7
+  verify_monorepo "$target"
+fi
 
 echo
 echo "Results: $PASS passed, $FAIL failed"
