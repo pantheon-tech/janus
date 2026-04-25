@@ -94,7 +94,7 @@ export default function createOrder() { } // ✗ default export
 
 Hard-line rules:
 
-- **500 lines per file max.** Enforced via Biome `maxFileLines` when available; manual review otherwise.
+- **500 lines per file max.** Manual review during PR — there is no automated enforcement (Biome has no `maxFileLines` rule as of v2.4; track upstream at <https://github.com/biomejs/biome/issues>). Reviewers reject files over 500 lines; if the work genuinely needs more, split the module before merge.
 - **50 lines per function max** (exc. JSX render fns, type defs).
 - **5 parameters per function max.** Use an options object for more.
 - **Cyclomatic complexity ≤ 10** per function.
