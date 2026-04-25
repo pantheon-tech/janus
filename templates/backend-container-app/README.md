@@ -33,7 +33,7 @@ Container App for long-running services — WebSockets, pub/sub, stateful, predi
 │   └── scripts/
 ├── .github/workflows/
 │   ├── ci.yml
-│   ├── deploy-dev.yml           # docker build → ACR push → revision create
+│   ├── deploy-staging.yml       # docker build → ACR push → revision create
 │   ├── deploy-prod.yml
 │   ├── infra-preview.yml
 │   └── rollback.yml             # revision activate — image-swap model
@@ -48,10 +48,10 @@ Container App for long-running services — WebSockets, pub/sub, stateful, predi
 - **`src/main.ts`** — graceful shutdown on SIGTERM (drain connections).
 - **`src/ws/`** — WebSocket connection lifecycle + message router (optional, only for WS workloads).
 - **`infra/main.bicep`** — AVM-composed: identity → LAW → AppInsights → KV → ACR → CAE → Container App (single-revision mode, image-swap rollback).
-- **`.github/workflows/deploy-{dev,prod}.yml`** — build image, push to ACR, update Container App revision.
+- **`.github/workflows/deploy-{staging,prod}.yml`** — build image, push to ACR, update Container App revision.
 - **`.github/workflows/rollback.yml`** — swap image tag to previous via `az containerapp update`.
 
 ## See also
 
-- `/home/skip/janus/docs/adr/0004-avm-first-infrastructure.md`
 - `/home/skip/janus/docs/conventions/infrastructure.md`
+- `/home/skip/janus/docs/conventions/avm-versions.md`

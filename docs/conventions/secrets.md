@@ -2,6 +2,7 @@
 title: Secret Management
 type: reference
 last_reviewed: 2026-04-24
+owners: [@skipnz]
 ---
 
 # Secret Management

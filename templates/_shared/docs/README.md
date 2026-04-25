@@ -10,5 +10,9 @@
 - [Runbooks](./runbooks/README.md)
 
 ## Reference (auto-generated)
-- [OpenAPI](./reference/openapi.json) (if backend)
-- [Wire types](./reference/wire-types.md) (if shared types package)
+
+Backends: a `./reference/openapi.json` produced by zod-openapi (or
+equivalent). Types packages: a `./reference/wire-types.md` rendered by
+TypeDoc. CLIs: a `./reference/cli.md` from `<cli> --help`. The `reference/`
+directory is created by the build that generates the artefact — it is not
+checked in empty.

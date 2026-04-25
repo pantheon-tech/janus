@@ -2,6 +2,7 @@
 title: Azure Naming (Full Reference)
 type: reference
 last_reviewed: 2026-04-24
+owners: [@skipnz]
 ---
 
 # Azure Naming — Full Reference
@@ -13,47 +14,47 @@ last_reviewed: 2026-04-24
 
 ## Full table
 
-| Resource | Abbrev | Hyphens? | Length cap | Example (workload=`myapp`, env=`dev`) |
+| Resource | Abbrev | Hyphens? | Length cap | Example (workload=`myapp`, env=`staging`) |
 |---|---|---|---|---|
-| Resource Group | `rg` | yes | 90 | `rg-myapp-dev` |
-| Storage Account | `st` | **no** | 24 (lowercase) | `stmyappdev` |
-| Key Vault | `kv` | yes | 24 | `kv-myapp-dev` |
-| Function App | `func` | yes | 60 | `func-myapp-dev` |
-| App Service Plan | `plan` | yes | 40 | `plan-myapp-dev` |
-| App Service (Web App) | `app` | yes | 60 | `app-myapp-dev` |
-| Static Web App | `swa` | yes | 60 | `swa-myapp-dev` |
-| Container App Environment | `cae` | yes | 60 | `cae-myapp-dev` |
-| Container App | `ca` | yes | 32 | `ca-myapp-api-dev` |
-| Container Registry | `cr` | **no** | 50 (lowercase) | `crmyappdev` |
-| Log Analytics Workspace | `log` | yes | 63 | `log-myapp-dev` |
-| Application Insights | `appi` | yes | 260 | `appi-myapp-dev` |
-| User-assigned Managed Identity | `id` | yes | 128 | `id-myapp-dev` |
-| Private Endpoint | `pep` | yes | 80 | `pep-myapp-kv-dev` |
+| Resource Group | `rg` | yes | 90 | `rg-myapp-staging` |
+| Storage Account | `st` | **no** | 24 (lowercase) | `stmyappstaging` |
+| Key Vault | `kv` | yes | 24 | `kv-myapp-staging` |
+| Function App | `func` | yes | 60 | `func-myapp-staging` |
+| App Service Plan | `plan` | yes | 40 | `plan-myapp-staging` |
+| App Service (Web App) | `app` | yes | 60 | `app-myapp-staging` |
+| Static Web App | `swa` | yes | 60 | `swa-myapp-staging` |
+| Container App Environment | `cae` | yes | 60 | `cae-myapp-staging` |
+| Container App | `ca` | yes | 32 | `ca-myapp-api-staging` |
+| Container Registry | `cr` | **no** | 50 (lowercase) | `crmyappstaging` |
+| Log Analytics Workspace | `log` | yes | 63 | `log-myapp-staging` |
+| Application Insights | `appi` | yes | 260 | `appi-myapp-staging` |
+| User-assigned Managed Identity | `id` | yes | 128 | `id-myapp-staging` |
+| Private Endpoint | `pep` | yes | 80 | `pep-myapp-kv-staging` |
 | Private DNS Zone | — | (use FQDN) | 63 | `privatelink.vaultcore.azure.net` |
-| Event Grid Topic | `egst` | yes | 50 | `egst-myapp-dev` |
-| Event Grid System Topic | `egsys` | yes | 50 | `egsys-myapp-dev` |
-| Service Bus Namespace | `sb` | yes | 50 | `sb-myapp-dev` |
+| Event Grid Topic | `egst` | yes | 50 | `egst-myapp-staging` |
+| Event Grid System Topic | `egsys` | yes | 50 | `egsys-myapp-staging` |
+| Service Bus Namespace | `sb` | yes | 50 | `sb-myapp-staging` |
 | Service Bus Queue | `sbq` | yes | 260 | `sbq-orders` |
 | Service Bus Topic | `sbt` | yes | 260 | `sbt-events` |
 | API Management | `apim` | yes | 50 | `apim-myapp-shared` |
-| SignalR Service | `sigr` | yes | 63 | `sigr-myapp-dev` |
-| Cosmos DB Account | `cosmos` | yes | 44 (lowercase) | `cosmos-myapp-dev` |
-| SQL Server | `sql` | yes | 63 | `sql-myapp-dev` |
-| SQL Database | `sqldb` | yes | 128 | `sqldb-myapp-dev` |
-| VNet | `vnet` | yes | 64 | `vnet-myapp-dev` |
+| SignalR Service | `sigr` | yes | 63 | `sigr-myapp-staging` |
+| Cosmos DB Account | `cosmos` | yes | 44 (lowercase) | `cosmos-myapp-staging` |
+| SQL Server | `sql` | yes | 63 | `sql-myapp-staging` |
+| SQL Database | `sqldb` | yes | 128 | `sqldb-myapp-staging` |
+| VNet | `vnet` | yes | 64 | `vnet-myapp-staging` |
 | Subnet | `snet` | yes | 80 | `snet-apps` |
-| NSG | `nsg` | yes | 80 | `nsg-apps-dev` |
-| Route Table | `rt` | yes | 80 | `rt-hub-dev` |
-| Public IP | `pip` | yes | 80 | `pip-gw-dev` |
-| Load Balancer | `lb` | yes | 80 | `lb-apps-dev` |
-| Application Gateway | `agw` | yes | 80 | `agw-myapp-dev` |
+| NSG | `nsg` | yes | 80 | `nsg-apps-staging` |
+| Route Table | `rt` | yes | 80 | `rt-hub-staging` |
+| Public IP | `pip` | yes | 80 | `pip-gw-staging` |
+| Load Balancer | `lb` | yes | 80 | `lb-apps-staging` |
+| Application Gateway | `agw` | yes | 80 | `agw-myapp-staging` |
 | Front Door Profile | `afd` | yes | 64 | `afd-myapp-prod` |
 | CDN Profile | `cdnp` | yes | 260 | `cdnp-myapp-prod` |
-| Disk | `disk` | yes | 80 | `disk-jumpbox-dev` |
-| VM | `vm` | yes | 64 (Linux), 15 (Windows) | `vm-jumpbox-dev` |
+| Disk | `disk` | yes | 80 | `disk-jumpbox-staging` |
+| VM | `vm` | yes | 64 (Linux), 15 (Windows) | `vm-jumpbox-staging` |
 | Managed Cluster (AKS) | `aks` | yes | 63 | `aks-myapp-prod` |
-| Redis Cache | `redis` | yes | 63 | `redis-myapp-dev` |
-| Cognitive Services | `cog` | yes | 64 | `cog-myapp-openai-dev` |
+| Redis Cache | `redis` | yes | 63 | `redis-myapp-staging` |
+| Cognitive Services | `cog` | yes | 64 | `cog-myapp-openai-staging` |
 
 ## Conventions
 
@@ -65,15 +66,15 @@ last_reviewed: 2026-04-24
 
 ### Environments
 
-Exactly three: `dev`, `staging`, `prod`.
-**NOT**: `uat`, `test`, `qa`, `preprod`, `integration`, `sandbox`.
+Two: `staging`, `prod` (plus `shared` for cross-environment resources).
+**NOT**: `dev`, `uat`, `test`, `qa`, `preprod`, `integration`, `sandbox`.
 
 For cross-environment (shared) resources: use `shared` as the suffix.
 
 ### Instance numbering
 
 - Omit `-001` by default.
-- Add when resource must exist twice in same scope: `func-myapp-dev-001`, `func-myapp-dev-002`.
+- Add when resource must exist twice in same scope: `func-myapp-staging-001`, `func-myapp-staging-002`.
 - Numbering starts at `001`, zero-padded.
 
 ### Length warnings
@@ -98,7 +99,7 @@ If a chosen workload slug pushes past the cap on the tightest resource (KV), sho
 ### Region embedding
 
 - **Default**: don't embed region (saves length, region is implicit per RG).
-- **Multi-region**: embed 3-char code: `kv-myapp-dev-aue` (australiaeast), `kv-myapp-dev-use` (southeastasia via eastasia-substitute).
+- **Multi-region**: embed 3-char code: `kv-myapp-staging-aue` (australiaeast), `kv-myapp-staging-sea` (southeastasia).
 
 ### Region short codes
 
@@ -115,27 +116,27 @@ If a chosen workload slug pushes past the cap on the tightest resource (KV), sho
 
 ## Examples — full stack
 
-For `workload=myapp`, `env=dev`:
+For `workload=myapp`, `env=staging`:
 
 ```
-rg-myapp-dev                       # Resource Group
-├─ id-myapp-dev                    # User-assigned Managed Identity
-├─ log-myapp-dev                   # Log Analytics Workspace
-├─ appi-myapp-dev                  # Application Insights
-├─ kv-myapp-dev                    # Key Vault
-├─ stmyappdev                      # Storage Account
-├─ crmyappdev                      # Container Registry
-├─ cae-myapp-dev                   # Container App Environment
-├─ ca-myapp-api-dev                # Container App (API)
-├─ ca-myapp-worker-dev             # Container App (Worker)
-├─ swa-myapp-dev                   # Static Web App (frontend)
-└─ pep-myapp-kv-dev                # Private Endpoint (KV, prod only)
+rg-myapp-staging                   # Resource Group
+├─ id-myapp-staging                # User-assigned Managed Identity
+├─ log-myapp-staging               # Log Analytics Workspace
+├─ appi-myapp-staging              # Application Insights
+├─ kv-myapp-staging                # Key Vault
+├─ stmyappstaging                  # Storage Account
+├─ crmyappstaging                  # Container Registry
+├─ cae-myapp-staging               # Container App Environment
+├─ ca-myapp-api-staging            # Container App (API)
+├─ ca-myapp-worker-staging         # Container App (Worker)
+├─ swa-myapp-staging               # Static Web App (frontend)
+└─ pep-myapp-kv-staging            # Private Endpoint (KV, prod only)
 ```
 
 ## Anti-patterns
 
 - `<app>-<env>-<type>` suffix form (legacy, retired).
 - `<type>-<env>-<app>` env-before-app (breaks prefix-matching workflows).
-- Inconsistent casing (`RG-MyApp-Dev`) — always lowercase.
+- Inconsistent casing (`RG-MyApp-Staging`) — always lowercase.
 - Abbreviations from portal displays (`rgp` for RG) — use the CAF abbreviations above.
-- Custom separators (`rg_myapp_dev`, `rg.myapp.dev`) — always hyphens (or nothing).
+- Custom separators (`rg_myapp_staging`, `rg.myapp.staging`) — always hyphens (or nothing).

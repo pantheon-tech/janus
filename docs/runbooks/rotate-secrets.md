@@ -3,7 +3,7 @@ title: Rotate a secret in Key Vault
 type: runbook
 last_reviewed: 2026-04-24
 last_executed: 2026-04-24
-owners: [skipnz]
+owners: [@skipnz]
 ---
 
 # Rotate a secret in Key Vault
@@ -15,7 +15,7 @@ Rotate a secret stored in Azure Key Vault that is referenced by runtime apps (Co
 - Azure CLI logged in: `az account show` returns the correct tenant/subscription.
 - Role: `Key Vault Secrets Officer` on the target Key Vault.
 - New secret value available (from source of truth — provider portal, new certificate, etc.).
-- Target environment known: `dev`, `staging`, or `prod`.
+- Target environment known: `staging` or `prod`.
 
 ## Steps
 
@@ -90,4 +90,4 @@ If verify fails:
 
 - This runbook does NOT cover rotating managed identity credentials — those are Azure-managed and rotate automatically.
 - For credentials-in-GitHub-environment-secrets (layer 2), rotate in GitHub Settings → Environments → secrets.
-- For local-dev `.env.local` (layer 3), rotate the source and re-run `infra/scripts/populate-secrets.sh` if Key Vault is the source of truth for dev.
+- For local-developer `.env.local` (layer 3), rotate the source and re-run `infra/scripts/populate-secrets.sh` if Key Vault is the source of truth for the staging environment.

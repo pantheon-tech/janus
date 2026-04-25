@@ -2,6 +2,7 @@
 title: AGENTS.md Primary
 type: reference
 last_reviewed: 2026-04-24
+owners: [@skipnz]
 ---
 
 # AGENTS.md Primary
@@ -21,6 +22,7 @@ Seven sections. Strict.
 ```markdown
 # <project-name>
 
+## Overview
 <1-2 sentences describing the project>
 
 ## Tech Stack
@@ -47,14 +49,10 @@ Seven sections. Strict.
 
 ## Length
 
-| File | Target | Hard max |
-|---|---|---|
-| `AGENTS.md` (root) | 100 lines | 150 |
-| `AGENTS.md` (per-package, monorepo) | 60 lines | 100 |
-| `CLAUDE.md` | 20 lines | 40 |
-
-Above target: split content into `docs/adr/`, `docs/runbooks/`, or per-package files.
-Above hard max: an ADR is required for the exception.
+See the canonical length-cap table in
+[`./docs-shapes.md`](./docs-shapes.md#length-caps). Above target: split content
+into `docs/adr/`, `docs/runbooks/`, or per-package files. Above hard max: an
+ADR is required for the exception.
 
 ## CLAUDE.md shape
 
@@ -74,7 +72,10 @@ Each package has its own `AGENTS.md` in its directory. Claude Code loads nested 
 
 ## Emphasis
 
-`CRITICAL`, `MANDATORY`, `NEVER`, `ALWAYS` markers cap at **1–3 per file**, reserved for genuine data-loss gates. Use markdown structure (headings, tables) for emphasis instead. Aggressive emphasis language causes overtriggering on current Claude models.
+Reserve uppercase emphasis tokens (the kind agents heuristically over-weight)
+for genuine data-loss gates. Cap at **1–3 per file**. Use markdown structure
+(headings, tables, bold) for ordinary emphasis. Aggressive emphasis language
+overtriggers current Claude models.
 
 ## Rot prevention
 

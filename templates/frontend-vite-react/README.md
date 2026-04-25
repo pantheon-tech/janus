@@ -49,7 +49,7 @@ Vite + React + TypeScript + MSAL → deployed to Azure Static Web Apps.
 │   └── scripts/
 ├── .github/workflows/
 │   ├── ci.yml
-│   ├── deploy-dev.yml           # azure/static-web-apps-deploy@v1
+│   ├── deploy-staging.yml       # azure/static-web-apps-deploy@v1
 │   └── deploy-prod.yml
 ├── AGENTS.md
 ├── CLAUDE.md
@@ -67,4 +67,4 @@ Vite + React + TypeScript + MSAL → deployed to Azure Static Web Apps.
 ## See also
 
 - `/home/skip/janus/docs/conventions/layering.md#frontend`
-- `/home/skip/janus/docs/conventions/state-management.md`
+- `/home/skip/janus/docs/conventions/frontend-state-management.md`

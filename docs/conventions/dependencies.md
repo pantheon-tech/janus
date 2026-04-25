@@ -2,6 +2,7 @@
 title: Dependency Management
 type: reference
 last_reviewed: 2026-04-22
+owners: [@skipnz]
 ---
 
 # Dependency Management

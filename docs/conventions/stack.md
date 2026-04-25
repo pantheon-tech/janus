@@ -2,6 +2,7 @@
 title: Stack
 type: reference
 last_reviewed: 2026-04-24
+owners: [@skipnz]
 ---
 
 # Stack
@@ -88,7 +89,7 @@ The default stack every janus-derived project inherits.
 |---|---|
 | Build | Vite |
 | Framework | React 19 |
-| State | Zustand. See [state-management.md](./state-management.md). |
+| State | Zustand. See [frontend-state-management.md](./frontend-state-management.md). |
 | Auth | MSAL (Entra ID) |
 | Routing | TanStack Router |
 | Hosting | Azure Static Web Apps |

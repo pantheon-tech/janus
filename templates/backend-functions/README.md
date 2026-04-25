@@ -36,7 +36,7 @@ Azure Functions v4 (Node 20) for sparse APIs, webhooks, event handlers.
 │   └── scripts/
 ├── .github/workflows/
 │   ├── ci.yml
-│   ├── deploy-dev.yml
+│   ├── deploy-staging.yml
 │   ├── deploy-prod.yml
 │   └── infra-preview.yml
 ├── AGENTS.md
@@ -50,10 +50,10 @@ Azure Functions v4 (Node 20) for sparse APIs, webhooks, event handlers.
 - **`src/functions/`** — one file per HTTP endpoint, using `app.http()` pattern.
 - **`src/lib/`** — config loader (zod-validated env), pino logger, AppError hierarchy, Cosmos/Table client singleton, MSAL token verify middleware.
 - **`infra/main.bicep`** — AVM-composed: managed identity → Log Analytics → App Insights → Key Vault → Storage (required for Functions) → Function App (Flex Consumption).
-- **`.github/workflows/deploy-{dev,prod}.yml`** — OIDC federated, `func azure functionapp publish` via CLI.
+- **`.github/workflows/deploy-{staging,prod}.yml`** — OIDC federated, `func azure functionapp publish` via CLI.
 
 ## See also
 
 - `/home/skip/janus/docs/conventions/layering.md` — backend layering rules
 - `/home/skip/janus/docs/conventions/error-handling.md` — domain/infra error split
-- `/home/skip/janus/docs/conventions/logging-observability.md` — pino + OTel setup
+- `/home/skip/janus/docs/conventions/logging.md` — pino + OTel setup

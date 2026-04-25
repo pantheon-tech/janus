@@ -2,6 +2,7 @@
 title: {{workload}} — Architecture
 type: reference
 last_reviewed: {{date}}
+owners: [{{owner}}]
 ---
 
 # {{workload}} — Architecture
@@ -39,7 +40,7 @@ graph LR
 
 ## Deployment
 
-Per-environment: dev / prod. See `infra/README.md` for the deployment model.
+Per-environment: staging / prod. See `infra/README.md` for the deployment model.
 
 ## References
 

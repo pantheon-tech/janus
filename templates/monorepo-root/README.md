@@ -26,7 +26,7 @@ pnpm workspace orchestrator. References other archetypes as packages.
 ├── biome.jsonc
 ├── .github/workflows/
 │   ├── ci.yml                  # path-filtered changes job + per-package matrix
-│   └── deploy-{dev,prod}.yml
+│   └── deploy-{staging,prod}.yml
 ├── AGENTS.md                   # root — links to per-package AGENTS.md
 ├── CLAUDE.md
 └── README.md

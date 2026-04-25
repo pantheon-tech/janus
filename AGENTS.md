@@ -2,10 +2,12 @@
 title: janus
 type: agents
 last_reviewed: 2026-04-25
-owners: [skipnz]
+owners: [@skipnz]
 ---
 
 # janus
+
+## Overview
 
 Portable project starter kit for TypeScript + Azure solo-dev work. Encodes conventions so new projects inherit a baseline instead of re-evolving decisions.
 

@@ -2,6 +2,7 @@
 title: Alerting
 type: reference
 last_reviewed: 2026-04-22
+owners: [@skipnz]
 ---
 
 # Alerting
@@ -41,7 +42,7 @@ TODO. Anticipated content:
 TODO. Anticipated content:
 
 - Suppressing alerts during planned deploys.
-- Per-environment severity (prod pages, staging emails, dev silent).
+- Per-environment severity (prod pages, staging emails).
 
 ## Alert hygiene
 
