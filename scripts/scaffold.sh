@@ -13,11 +13,22 @@ set -euo pipefail
 
 JANUS_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 JANUS_VERSION="$(grep '"version"' "${JANUS_ROOT}/package.json" | head -1 | awk -F'"' '{print $4}')"
+MO="${JANUS_ROOT}/scripts/lib/mo"
 
 echo "═══════════════════════════════════════════════"
 echo "  janus v${JANUS_VERSION} — project scaffold"
 echo "═══════════════════════════════════════════════"
 echo
+
+# ─── Preflight: required tools ───────────────────────────────────────────
+# rsync was previously a hard dependency; replaced with cp + find for
+# portability (rsync is not in default container/devcontainer images).
+for tool in git jq pnpm bash; do
+  command -v "$tool" >/dev/null 2>&1 || {
+    echo "Error: '$tool' is required but not installed."; exit 1;
+  }
+done
+[ -x "$MO" ] || { echo "Error: vendored mo missing at ${MO}"; exit 1; }
 
 # ─── Detect / prompt: GitHub identity ────────────────────────────────────
 GIT_USER_NAME=$(git config --global user.name 2>/dev/null || echo "")
@@ -50,8 +61,8 @@ TARGET_DIR="${1:-${HOME}/git/${WORKLOAD}}"
 read -r -p "Target directory [${TARGET_DIR}]: " ENTERED_TARGET
 TARGET_DIR="${ENTERED_TARGET:-${TARGET_DIR}}"
 
-if [ -e "$TARGET_DIR" ]; then
-  echo "Error: ${TARGET_DIR} already exists."
+if [ -e "$TARGET_DIR" ] && [ "$(ls -A "$TARGET_DIR" 2>/dev/null || true)" ]; then
+  echo "Error: ${TARGET_DIR} already exists and is non-empty."
   exit 1
 fi
 
@@ -93,15 +104,13 @@ ask_yn() {
 
 # Defaults inferred from archetype, then overridden by user
 HAS_FRONTEND=false
-HAS_BACKEND=false
 HAS_BROWSER_E2E=false
 HAS_PYTHON=false
 USES_IMAGE_GEN=false
 
 case "$ARCHETYPE" in
   frontend-vite-react)         HAS_FRONTEND=true; HAS_BROWSER_E2E=true ;;
-  backend-functions|backend-container-app|mcp-server) HAS_BACKEND=true ;;
-  monorepo-root)               HAS_FRONTEND=true; HAS_BACKEND=true; HAS_BROWSER_E2E=true ;;
+  monorepo-root)               HAS_FRONTEND=true; HAS_BROWSER_E2E=true ;;
 esac
 
 if ask_yn "Has a frontend (React/Vite/etc.)?" "$([ "$HAS_FRONTEND" = true ] && echo y || echo n)"; then
@@ -157,22 +166,25 @@ if [[ ! "$CONFIRM" =~ ^[Yy] ]]; then
   exit 0
 fi
 
-# ─── Substitution helper ─────────────────────────────────────────────────
-substitute() {
-  local content="$1"
-  echo "$content" \
-    | sed "s|{{workload}}|${WORKLOAD}|g" \
-    | sed "s|{{description}}|${DESCRIPTION}|g" \
-    | sed "s|{{archetype}}|${ARCHETYPE}|g" \
-    | sed "s|{{github_org}}|${GITHUB_ORG}|g" \
-    | sed "s|{{author}}|${AUTHOR}|g" \
-    | sed "s|{{author_email}}|${AUTHOR_EMAIL}|g" \
-    | sed "s|{{node_version}}|24|g" \
-    | sed "s|{{license}}|MIT|g" \
-    | sed "s|{{region}}|australiaeast|g" \
-    | sed "s|{{template_version}}|v${JANUS_VERSION}|g" \
-    | sed "s|{{year}}|$(date +%Y)|g" \
-    | sed "s|{{date}}|$(date +%Y-%m-%d)|g"
+# ─── Render helper: pipe a template through mo with the slot env ─────────
+# All slot values are exported once; mo reads them from the environment.
+export workload="$WORKLOAD"
+export description="$DESCRIPTION"
+export archetype="$ARCHETYPE"
+export github_org="$GITHUB_ORG"
+export author="$AUTHOR"
+export author_email="$AUTHOR_EMAIL"
+export node_version="24"
+export license="MIT"
+export region="australiaeast"
+export template_version="v${JANUS_VERSION}"
+export year="$(date +%Y)"
+export date="$(date +%Y-%m-%d)"
+
+render_tmpl() {
+  local src="$1" out="$2"
+  mkdir -p "$(dirname "$out")"
+  "$MO" "$src" > "$out"
 }
 
 # ─── Create target tree ──────────────────────────────────────────────────
@@ -182,46 +194,92 @@ cd "$TARGET_DIR"
 SHARED="${JANUS_ROOT}/templates/_shared"
 
 # 1. Copy verbatim files (everything not ending in .tmpl)
-rsync -a --exclude='*.tmpl' --exclude='README.md' "${SHARED}/" .
+#    Done with cp + find — no rsync dependency.
+( cd "$SHARED" && find . -type f ! -name '*.tmpl' -print0 | while IFS= read -r -d '' f; do
+    rel="${f#./}"
+    dest="${TARGET_DIR}/${rel}"
+    mkdir -p "$(dirname "$dest")"
+    cp "$f" "$dest"
+  done
+)
 
 # 2. Render .tmpl files with substitution, dropping the .tmpl suffix
 while IFS= read -r tmpl; do
   rel="${tmpl#${SHARED}/}"
   out="${rel%.tmpl}"
-  mkdir -p "$(dirname "$out")"
-  substitute "$(cat "$tmpl")" > "$out"
+  render_tmpl "$tmpl" "$out"
 done < <(find "$SHARED" -name '*.tmpl' -type f)
 
-# 3. Generate project .claude/settings.json with selected plugins
-mkdir -p .claude
-{
-  echo '{'
-  echo '  "env": {'
-  echo "    \"OTEL_RESOURCE_ATTRIBUTES\": \"project=${WORKLOAD}\""
-  echo '  },'
-  echo '  "worktree": {'
-  echo '    "symlinkDirectories": ["node_modules"]'
-  echo '  },'
-  if [ ${#PLUGINS[@]} -gt 0 ]; then
-    echo '  "enabledPlugins": {'
-    for i in "${!PLUGINS[@]}"; do
-      sep=','
-      [ "$i" -eq "$((${#PLUGINS[@]} - 1))" ] && sep=''
-      echo "    \"${PLUGINS[$i]}\": true${sep}"
-    done
-    echo '  },'
-  fi
-  echo '  "cleanupPeriodDays": 7'
-  echo '}'
-} > .claude/settings.json
+# 3. Snapshot conventions docs from janus into the target so the project has
+#    its own reference copy (decoupled from janus version drift).
+if [ -d "${JANUS_ROOT}/docs/conventions" ]; then
+  mkdir -p docs/conventions
+  cp -R "${JANUS_ROOT}/docs/conventions/." docs/conventions/
+fi
 
-# 4. Init git on the staging branch (janus default), initial commit
+# 4. Generate project .claude/settings.json with selected plugins.
+#    This is the single source of truth — there is no template counterpart;
+#    permissions block lives here so it cannot drift.
+mkdir -p .claude
+SETTINGS_BASE=$(jq -n \
+  --arg workload "$WORKLOAD" \
+  '{
+    env: { OTEL_RESOURCE_ATTRIBUTES: ("project=" + $workload) },
+    worktree: { symlinkDirectories: ["node_modules"] },
+    permissions: {
+      allow: [
+        "Bash(pnpm *)",
+        "Bash(npx tsc *)",
+        "Bash(gh *)",
+        "Bash(git status:*)",
+        "Bash(git diff:*)",
+        "Bash(git log:*)",
+        "Read(**)",
+        "Grep(**)",
+        "WebFetch(https://code.claude.com/*)",
+        "WebFetch(https://docs.claude.com/*)",
+        "WebFetch(https://learn.microsoft.com/*)"
+      ],
+      deny: [
+        "Bash(rm -rf *)",
+        "Bash(sudo *)",
+        "Bash(git push --force:*)",
+        "Bash(git push * main)",
+        "Bash(npm publish *)",
+        "Bash(pnpm publish *)"
+      ]
+    },
+    cleanupPeriodDays: 7
+  }')
+
+if [ ${#PLUGINS[@]} -gt 0 ]; then
+  PLUGINS_JSON=$(printf '%s\n' "${PLUGINS[@]}" \
+    | jq -R . | jq -s 'map({(.): true}) | add')
+  echo "$SETTINGS_BASE" \
+    | jq --argjson plugins "$PLUGINS_JSON" '. + {enabledPlugins: $plugins}' \
+    > .claude/settings.json
+else
+  echo "$SETTINGS_BASE" > .claude/settings.json
+fi
+
+# 5. Generate pnpm lockfile so the first push to CI does not fail on
+#    `pnpm install --frozen-lockfile`.
+if [ -f package.json ]; then
+  pnpm install --lockfile-only --silent 2>/dev/null || \
+    pnpm install --lockfile-only || true
+fi
+
+# 6. Init git on staging (working branch); also create main pointing at the
+#    same initial commit so the user can `git push -u origin main` later
+#    without an extra step.
 git init -q -b staging
 git add -A
 git -c user.name="$AUTHOR" -c user.email="$AUTHOR_EMAIL" commit -q -m "chore: initial scaffold from janus v${JANUS_VERSION}
 
 Archetype: ${ARCHETYPE}
 " || true
+# Create main branch at the initial commit (idempotent if branch exists)
+git branch main 2>/dev/null || true
 
 # ─── Post-scaffold checklist ─────────────────────────────────────────────
 cat <<EOF
@@ -231,6 +289,7 @@ cat <<EOF
 ═══════════════════════════════════════════════
 
 Location: ${TARGET_DIR}
+Branches: staging (default working branch), main (production)
 
 Next steps:
 
@@ -241,10 +300,12 @@ Next steps:
      - AGENTS.md (fill in archetype-specific Critical Context)
      - infra/main.bicep (if Azure-deploying — composing from AVM)
      - src/ (archetype-specific scaffold is currently TODO; fill in by hand
-       referring to docs/ in this project + janus's docs/conventions/)
+       referring to docs/ in this project + docs/conventions/)
 
-  3. Create the GitHub repo:
-       gh repo create ${GITHUB_ORG}/${WORKLOAD} --private --source=. --push
+  3. Create the GitHub repo and push both branches:
+       gh repo create ${GITHUB_ORG}/${WORKLOAD} --private --source=. --remote=origin
+       git push -u origin staging
+       git push -u origin main
 
   4. Set up GitHub environments:
        - 'staging' (auto-deploy from staging branch)
@@ -260,5 +321,7 @@ Next steps:
 
   7. Add repo secrets:
        - CLAUDE_CODE_OAUTH_TOKEN (from \`claude setup-token\`)
+       - ACTIONS_PAT (PAT with repo scope — needed for claude-autofix to
+         trigger downstream @claude workflow)
        - AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID (per env)
 EOF

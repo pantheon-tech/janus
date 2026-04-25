@@ -1,3 +1,4 @@
+{{=<% %>=}}
 name: PR Merge Cleanup
 
 # Auto-close `code-review` and `claude-fix` issues when their parent PR merges.
@@ -19,14 +20,16 @@ jobs:
     steps:
       - name: Close related issues
         env:
-          GH_TOKEN: ${{ '{{' }} secrets.GITHUB_TOKEN {{ '}}' }}
-          PR_NUMBER: ${{ '{{' }} github.event.pull_request.number {{ '}}' }}
-          REPO: ${{ '{{' }} github.repository {{ '}}' }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
         run: |
           for label in code-review claude-fix; do
+            # Anchor `PR #N` with a non-digit (or end-of-string) lookbehind so
+            # `PR #1` does not match `PR #10`, `PR #100`, etc.
             gh issue list --repo "$REPO" --label "$label" --state open --limit 50 \
               --json number,body \
-              --jq ".[] | select(.body | test(\"PR #${PR_NUMBER}\")) | .number" \
+              --jq ".[] | select(.body | test(\"PR #${PR_NUMBER}([^0-9]|$)\")) | .number" \
             | while read -r num; do
                 [ -z "$num" ] && continue
                 gh issue close "$num" --repo "$REPO" \

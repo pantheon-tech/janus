@@ -1,3 +1,4 @@
+{{=<% %>=}}
 name: Claude Autofix
 
 # Fail-soft pattern: when CI fails on a PR, capture logs, open a `claude-fix`
@@ -17,9 +18,20 @@ permissions:
   pull-requests: write
   actions: read
 
+concurrency:
+  group: autofix-${{ github.event.workflow_run.pull_requests[0].number || github.event.workflow_run.id }}
+  cancel-in-progress: false
+
 jobs:
   open-fix-issue:
-    if: github.event.workflow_run.conclusion == 'failure' && github.event.workflow_run.event == 'pull_request'
+    # Only fire on PR-failure runs from same-repo PRs (fork PRs have an empty
+    # pull_requests array under GITHUB_TOKEN, which would create a malformed
+    # issue with "PR #").
+    if: >-
+      github.event.workflow_run.conclusion == 'failure'
+      && github.event.workflow_run.event == 'pull_request'
+      && github.event.workflow_run.pull_requests[0] != null
+      && github.event.workflow_run.head_repository.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -28,8 +40,11 @@ jobs:
       - name: Cooldown check
         id: cooldown
         env:
-          GH_TOKEN: ${{ '{{' }} github.token {{ '}}' }}
-          PR_NUMBER: ${{ '{{' }} github.event.workflow_run.pull_requests[0].number {{ '}}' }}
+          # ACTIONS_PAT (PAT with repo scope) is required so the issue we open
+          # actually triggers the @claude workflow downstream — events created
+          # by GITHUB_TOKEN do not cascade into other workflows.
+          GH_TOKEN: ${{ secrets.ACTIONS_PAT || github.token }}
+          PR_NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}
         run: |
           # 30-minute cooldown per PR + open-PR dedup
           MARKER="<!-- claude-autofix:pr:$PR_NUMBER -->"
@@ -51,8 +66,8 @@ jobs:
         if: steps.cooldown.outputs.skip == 'false'
         id: logs
         env:
-          GH_TOKEN: ${{ '{{' }} github.token {{ '}}' }}
-          RUN_ID: ${{ '{{' }} github.event.workflow_run.id {{ '}}' }}
+          GH_TOKEN: ${{ secrets.ACTIONS_PAT || github.token }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
         run: |
           LOG=$(gh run view "$RUN_ID" --log-failed 2>&1 | head -200 || echo "(log capture failed)")
           {
@@ -64,11 +79,13 @@ jobs:
       - name: Create or update fix issue
         if: steps.cooldown.outputs.skip == 'false'
         env:
-          GH_TOKEN: ${{ '{{' }} github.token {{ '}}' }}
-          PR_NUMBER: ${{ '{{' }} github.event.workflow_run.pull_requests[0].number {{ '}}' }}
-          RUN_URL: ${{ '{{' }} github.event.workflow_run.html_url {{ '}}' }}
-          MARKER: ${{ '{{' }} steps.cooldown.outputs.marker {{ '}}' }}
-          LOG: ${{ '{{' }} steps.logs.outputs.log {{ '}}' }}
+          # Must be ACTIONS_PAT — issues created via GITHUB_TOKEN do not trigger
+          # the claude.yml workflow that listens for @claude mentions.
+          GH_TOKEN: ${{ secrets.ACTIONS_PAT || github.token }}
+          PR_NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+          MARKER: ${{ steps.cooldown.outputs.marker }}
+          LOG: ${{ steps.logs.outputs.log }}
         run: |
           BODY=$(cat <<EOF
           @claude CI failed on PR #$PR_NUMBER. Please review the logs and push a fix to the PR branch.
