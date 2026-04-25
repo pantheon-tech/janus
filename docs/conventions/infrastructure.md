@@ -2,12 +2,10 @@
 title: Infrastructure (AVM Composition)
 type: reference
 last_reviewed: 2026-04-24
-authorising_adr: 0004
 ---
 
 # Infrastructure — AVM Composition Pattern
 
-Authorised by [ADR 0004](../adr/0004-avm-first-infrastructure.md).
 
 ## Module strategy
 

@@ -2,7 +2,6 @@
 title: Code Style
 type: reference
 last_reviewed: 2026-04-24
-authorising_adr: 0001
 ---
 
 # Code Style
@@ -93,7 +92,7 @@ export default function createOrder() { } // ✗ default export
 
 ## Hard-line rules
 
-From `oaf/RULES.md` style — codified here:
+Hard-line rules:
 
 - **500 lines per file max.** Enforced via Biome `maxFileLines` when available; manual review otherwise.
 - **50 lines per function max** (exc. JSX render fns, type defs).

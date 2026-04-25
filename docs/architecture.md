@@ -8,7 +8,7 @@ last_reviewed: 2026-04-24
 
 janus is a repository of decisions, conventions, and templates. It has no runtime. It is consumed in two modes:
 
-1. **Read** — humans and agents read `docs/adr/` and `docs/conventions/` to understand the canonical choices.
+1. **Read** — humans and agents read `docs/conventions/` (and `docs/adr/` for janus-specific decisions) to understand the canonical choices.
 2. **Scaffold** — `scripts/scaffold.sh` reads `templates/` and renders a new project directory.
 
 ## Component overview

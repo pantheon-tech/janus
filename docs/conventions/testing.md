@@ -2,7 +2,6 @@
 title: Testing
 type: reference
 last_reviewed: 2026-04-24
-authorising_adr: 0001
 ---
 
 # Testing

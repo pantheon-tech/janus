@@ -2,12 +2,10 @@
 title: Azure Naming (Full Reference)
 type: reference
 last_reviewed: 2026-04-24
-authorising_adr: 0002
 ---
 
 # Azure Naming — Full Reference
 
-Authorised by [ADR 0002](../adr/0002-azure-resource-naming.md). This file is the canonical lookup.
 
 ## Pattern
 
