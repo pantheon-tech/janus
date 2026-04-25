@@ -1,11 +1,12 @@
-# {{workload}}
+{{=<% %>=}}
+# <%workload%>
 
-{{description}}
+<%description%>
 
 ## Prerequisites
 
-- Node {{node_version}} (`.nvmrc` pinned)
-- pnpm 9+
+- Node <%node_version%> (`.nvmrc` pinned)
+- pnpm 10+
 - Azure CLI (`az`) for deploys
 - GitHub CLI (`gh`) for repo operations
 
@@ -32,8 +33,11 @@ pnpm build         # production build
 ## Deploy
 
 ```bash
-pnpm deploy:dev    # see infra/deploy.sh
+pnpm deploy:staging  # see infra/deploy.sh
 ```
+
+Branch model: push to `staging` deploys staging; merge to `main` deploys prod
+(via GitHub Environment with required reviewers).
 
 Infrastructure is managed via Bicep + AVM composition. See `infra/README.md`.
 
@@ -41,9 +45,10 @@ Infrastructure is managed via Bicep + AVM composition. See `infra/README.md`.
 
 - [AGENTS.md](./AGENTS.md) — primary agent context
 - [docs/architecture.md](./docs/architecture.md) — system overview
+- [docs/conventions/](./docs/conventions/) — shared conventions snapshot from janus
 - [docs/adr/](./docs/adr/) — architectural decisions
 - [docs/runbooks/](./docs/runbooks/) — operational procedures
 
 ## License
 
-{{license}} — see [LICENSE](./LICENSE).
+<%license%> — see [LICENSE](./LICENSE).

@@ -1,3 +1,4 @@
+{{=<% %>=}}
 name: Claude Code
 
 # @claude mention handler — fixes blocking issues, answers questions, runs tests.
@@ -14,7 +15,7 @@ on:
     types: [submitted]
 
 concurrency:
-  group: claude-${{ '{{' }} github.event.issue.number || github.event.pull_request.number {{ '}}' }}
+  group: claude-${{ github.event.issue.number || github.event.pull_request.number }}
   cancel-in-progress: false
 
 jobs:
@@ -37,8 +38,8 @@ jobs:
         id: pr-ref
         if: github.event_name == 'issue_comment' && github.event.issue.pull_request
         env:
-          GH_TOKEN: ${{ '{{' }} github.token {{ '}}' }}
-          PR_URL: ${{ '{{' }} github.event.issue.pull_request.url {{ '}}' }}
+          GH_TOKEN: ${{ github.token }}
+          PR_URL: ${{ github.event.issue.pull_request.url }}
         run: |
           HEAD_REF=$(gh api "$PR_URL" --jq '.head.ref')
           echo "ref=$HEAD_REF" >> "$GITHUB_OUTPUT"
@@ -46,13 +47,13 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
           fetch-depth: 0
-          ref: ${{ '{{' }} steps.pr-ref.outputs.ref || '' {{ '}}' }}
+          ref: ${{ steps.pr-ref.outputs.ref || '' }}
 
       - name: Run Claude Code
         # See claude-code-review.yml for OIDC pinning rationale.
         uses: anthropics/claude-code-action@v1
         with:
-          claude_code_oauth_token: ${{ '{{' }} secrets.CLAUDE_CODE_OAUTH_TOKEN {{ '}}' }}
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           allowed_bots: 'claude,dependabot'
           additional_permissions: |
             actions: read

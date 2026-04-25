@@ -1,19 +1,20 @@
-# {{workload}}
+{{=<% %>=}}
+# <%workload%>
 
-{{description}}
+<%description%>
 
 ## Tech Stack
 
 | Aspect | Choice |
 |---|---|
 | Package manager | pnpm |
-| Runtime | Node {{node_version}} |
+| Runtime | Node <%node_version%> |
 | Language | TypeScript (strict) |
 | Lint + format | Biome v2 |
 | Tests | Vitest |
-| Cloud | Azure ({{env_default}}, {{region}}) |
+| Cloud | Azure (staging, <%region%>) |
 | IaC | Bicep + AVM composition |
-| Archetype | {{archetype}} |
+| Archetype | <%archetype%> |
 
 ## Commands
 
@@ -24,8 +25,13 @@ pnpm test
 pnpm lint
 pnpm typecheck
 pnpm build
-pnpm deploy:dev     # ./infra/deploy.sh dev
+pnpm deploy:staging   # ./infra/deploy.sh staging
 ```
+
+## Branching
+
+- `staging` — working branch, deploys to staging on push
+- `main` — production, deploys to prod (manual / required reviewers)
 
 ## Structure
 
@@ -39,8 +45,8 @@ pnpm deploy:dev     # ./infra/deploy.sh dev
 
 ## Design Decisions
 
-- [ADR 0001 — Stack choices]({{template_adr_link}})
-- See `docs/adr/` for project-specific decisions.
+- See `docs/conventions/` for shared conventions (stack, layering, testing, etc.)
+- See `docs/adr/` for project-specific architectural decisions.
 
 ## Known Issues
 
@@ -48,5 +54,5 @@ pnpm deploy:dev     # ./infra/deploy.sh dev
 
 ---
 
-*Last reviewed: {{date}}*
-*Template: janus {{template_version}}*
+*Last reviewed: <%date%>*
+*Template: janus <%template_version%>*

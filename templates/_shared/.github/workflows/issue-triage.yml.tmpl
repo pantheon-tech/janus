@@ -1,3 +1,4 @@
+{{=<% %>=}}
 name: Issue Triage
 
 # Auto-classify new issues using the rubric at .claude/skills/triage-issue/label-rubric.md.
@@ -7,7 +8,7 @@ on:
     types: [opened, transferred]
 
 concurrency:
-  group: triage-${{ '{{' }} github.event.issue.number {{ '}}' }}
+  group: triage-${{ github.event.issue.number }}
   cancel-in-progress: false
 
 permissions:
@@ -27,12 +28,12 @@ jobs:
         # See claude-code-review.yml for OIDC pinning rationale.
         uses: anthropics/claude-code-action@v1
         with:
-          claude_code_oauth_token: ${{ '{{' }} secrets.CLAUDE_CODE_OAUTH_TOKEN {{ '}}' }}
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           allowed_bots: 'claude,dependabot,github-actions'
           prompt: |
-            Triage issue #${{ '{{' }} github.event.issue.number {{ '}}' }} in ${{ '{{' }} github.repository {{ '}}' }}.
+            Triage issue #${{ github.event.issue.number }} in ${{ github.repository }}.
 
-            Read the issue: `gh issue view ${{ '{{' }} github.event.issue.number {{ '}}' }} --json title,body,labels`
+            Read the issue: `gh issue view ${{ github.event.issue.number }} --json title,body,labels`
 
             Read the rubric at `.claude/skills/triage-issue/label-rubric.md`. If the file is missing,
             apply only the `needs-triage` label and abort.
