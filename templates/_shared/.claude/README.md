@@ -28,5 +28,5 @@ Hooks are **copied** (not symlinked) from janus at scaffold time, so customising
 
 ## Format conventions
 
-- `.tmpl` files use Mustache custom delimiters: `{{=<% %>=}}` pragma at top, `<%var%>` for slots. This avoids consuming GitHub Actions `${{ }}` expressions in workflow files.
+- `.tmpl` files use Mustache custom delimiters: `{{=<% %>=}}` pragma at top, `<%name%>` for slots. This avoids consuming GitHub Actions `${{ }}` expressions in workflow files.
 - Hook scripts are bash; the `.tmpl` extension is dropped at render time. The scaffold restores the `+x` bit afterwards.

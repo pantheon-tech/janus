@@ -60,9 +60,13 @@ verify_project() {
   local target="$1" arch_num="$2"
   local -a errors=()
 
-  # Unsubstituted <%slot%> tokens. Skip GitHub Actions ${{ ... }} expressions.
+  # Unsubstituted <%slot%> tokens — match the actual slot identifier shape:
+  # an alpha/underscore start followed by alnum/underscore. This excludes
+  #   - the pragma `<% %>` (space after `<%`)
+  #   - GitHub Actions `${{ ... }}` (handled by `[^$]` lookbehind)
+  #   - HTML-entity-escaped doc references like `&lt;%name%&gt;`
   local slot_hits
-  slot_hits=$(grep -rEn '(^|[^$])<%[^%]' \
+  slot_hits=$(grep -rEn '(^|[^$])<%[a-z_][a-z0-9_]*%>' \
     --exclude-dir=node_modules --exclude-dir=.git \
     "$target" 2>/dev/null || true)
   if [ -n "$slot_hits" ]; then
