@@ -1,0 +1,92 @@
+{{=<% %>=}}
+#!/bin/bash
+# session-end.sh — thorough reconciliation on session exit (advisory, non-blocking)
+# Checks: uncommitted files, unpushed commits, orphaned worktrees, stale memory.
+#
+# Stale-term grep is config-driven: edit .claude/reconcile.config (one ERE
+# pattern per line, # comments allowed) to flag references to removed
+# infrastructure, renamed services, deprecated libs.
+set -euo pipefail
+
+PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$(pwd)}"
+
+# Skip if not in a git repo
+if ! git -C "$PROJECT_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  exit 0
+fi
+
+# Claude Code's per-project memory dir mirrors the project path with `/` → `-`.
+# Example: /home/alice/work/myproj → ~/.claude/projects/-home-alice-work-myproj
+PROJECT_KEY=$(echo "$PROJECT_DIR" | sed 's|/|-|g')
+MEMORY_DIR="$HOME/.claude/projects/${PROJECT_KEY}/memory"
+BREADCRUMB_DIR="$HOME/.claude/projects/${PROJECT_KEY}"
+TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+NOTES=""
+
+# 1. Uncommitted/staged/untracked files in main checkout
+CHANGED=$(git -C "$PROJECT_DIR" diff --name-only 2>/dev/null | wc -l)
+STAGED=$(git -C "$PROJECT_DIR" diff --cached --name-only 2>/dev/null | wc -l)
+UNTRACKED=$(git -C "$PROJECT_DIR" ls-files --others --exclude-standard 2>/dev/null | wc -l)
+TOTAL=$((CHANGED + STAGED + UNTRACKED))
+if [ "$TOTAL" -gt 0 ]; then
+  NOTES="${NOTES}• ${TOTAL} uncommitted/untracked files in main checkout\n"
+fi
+
+# 2. Unpushed commits
+UNPUSHED=$(git -C "$PROJECT_DIR" log --oneline @{upstream}..HEAD 2>/dev/null | wc -l || echo "0")
+if [ "$UNPUSHED" -gt 0 ]; then
+  NOTES="${NOTES}• ${UNPUSHED} unpushed commits on $(git -C "$PROJECT_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null)\n"
+fi
+
+# 3. Orphaned worktrees (no remote branch — work that hasn't been pushed)
+ORPHAN_COUNT=0
+while IFS= read -r wt_line; do
+  wt_path=$(echo "$wt_line" | awk '{print $1}')
+  wt_branch=$(echo "$wt_line" | sed 's/.*\[\(.*\)\]/\1/' | sed 's/\]$//')
+  [ "$wt_path" = "$PROJECT_DIR" ] && continue
+  if ! git -C "$PROJECT_DIR" ls-remote --heads origin "$wt_branch" 2>/dev/null | grep -q .; then
+    ORPHAN_COUNT=$((ORPHAN_COUNT + 1))
+  fi
+done < <(git -C "$PROJECT_DIR" worktree list 2>/dev/null)
+if [ "$ORPHAN_COUNT" -gt 0 ]; then
+  NOTES="${NOTES}• ${ORPHAN_COUNT} worktrees with no remote branch (consider cleanup)\n"
+fi
+
+# 4. Stale memory references — config-driven
+RECONCILE_CONFIG="$PROJECT_DIR/.claude/reconcile.config"
+if [ -f "$RECONCILE_CONFIG" ] && [ -d "$MEMORY_DIR" ]; then
+  # Extract non-comment, non-blank lines, join with `|` for one grep pass.
+  STALE_TERMS=$(grep -vE '^[[:space:]]*(#|$)' "$RECONCILE_CONFIG" 2>/dev/null \
+    | tr '\n' '|' | sed 's/|$//')
+  if [ -n "$STALE_TERMS" ]; then
+    STALE_HITS=$(grep -rlE "$STALE_TERMS" "$MEMORY_DIR"/ 2>/dev/null | wc -l || echo "0")
+    if [ "$STALE_HITS" -gt 0 ]; then
+      STALE_FILES=$(grep -rlE "$STALE_TERMS" "$MEMORY_DIR"/ 2>/dev/null \
+        | xargs -I{} basename {} | sort -u | tr '\n' ', ' | sed 's/,$//')
+      NOTES="${NOTES}• ${STALE_HITS} memory files contain stale references: ${STALE_FILES}\n"
+    fi
+  fi
+fi
+
+# 5. Write breadcrumb for next session
+BRANCH=$(git -C "$PROJECT_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unknown")
+mkdir -p "$BREADCRUMB_DIR" 2>/dev/null || true
+cat > "$BREADCRUMB_DIR/last-session.json" 2>/dev/null <<CRUMB || true
+{
+  "timestamp": "$TIMESTAMP",
+  "branch": "$BRANCH",
+  "uncommitted": $TOTAL,
+  "unpushed": $UNPUSHED,
+  "orphanedWorktrees": $ORPHAN_COUNT,
+  "notes": "$(echo -e "$NOTES" | head -c 500)"
+}
+CRUMB
+
+# Output advisory summary (non-blocking — just context)
+if [ -n "$NOTES" ]; then
+  echo "Session end reconciliation:"
+  echo -e "$NOTES"
+fi
+
+exit 0

@@ -1,0 +1,19 @@
+# .claude/reconcile.config — terms whose presence in memory files signals drift.
+#
+# session-end.sh (the SessionEnd hook) greps memory files under
+# ~/.claude/projects/<project>/memory/ for these patterns and warns if any
+# are found. Use to track:
+#   - Removed infrastructure (e.g. "ioredis" after dropping Redis)
+#   - Renamed services (e.g. "old-service-name" after a rename)
+#   - Deprecated libs whose mentions in memory should be cleaned up
+#
+# Format: one ERE (extended regex) pattern per line.
+# Lines starting with `#` are comments. Blank lines are ignored.
+#
+# Copy to `.claude/reconcile.config` and add patterns specific to this project.
+# An empty config is valid — it just disables the stale-term check.
+#
+# Example (uncomment + edit):
+# old-service-name
+# legacy\.api\.example\.com
+# DeprecatedClient
