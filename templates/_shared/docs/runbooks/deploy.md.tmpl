@@ -1,0 +1,116 @@
+{{=<% %>=}}
+---
+title: Deploy
+type: runbook
+last_reviewed: <%date%>
+last_executed: YYYY-MM-DD
+owners: [@<%github_org%>]
+---
+
+# Deploy
+
+Standard deployment procedure for `<%workload%>` to staging and production.
+
+<!-- TODO: Fill in environment-specific URLs, resource names, and approval requirements after scaffolding. -->
+
+## Prereqs
+
+- Access: write access to the GitHub repository; membership in the deploy approvers group for prod.
+- State: feature branch merged to `staging`; CI green; what-if review done (for infra changes).
+- Tools: `gh` CLI authenticated, `az` CLI authenticated for manual rollback.
+
+## Steps
+
+### Staging deploy (automatic)
+
+Merge to `staging` branch — the `deploy.yml` workflow runs automatically.
+
+```bash
+git checkout staging
+git merge --no-ff <feature-branch>
+git push origin staging
+```
+
+Monitor in GitHub Actions: `.github/workflows/deploy.yml` → `staging` run.
+
+### Production deploy
+
+Production deploy requires manual approval in GitHub Environments.
+
+1. Confirm staging is stable (run smoke tests or check health endpoint).
+2. Open a PR from `staging` → `main` (or push directly if policy allows).
+3. Merge — the `deploy.yml` workflow triggers for `main`.
+4. **Approve the `prod` environment gate** in GitHub Actions when prompted.
+
+```bash
+# Check current prod revision after deploy
+az containerapp revision list \
+  --name ca-<%workload%>-prod \
+  --resource-group rg-<%workload%>-prod \
+  --query "[?properties.active].{name:name, created:properties.createdTime}" \
+  -o table
+```
+
+<!-- TODO: Add project-specific smoke test commands for staging and prod. -->
+
+### Infra deploy (when infra changes are included)
+
+When the PR touches `infra/**`:
+
+1. The `infra-preview.yml` workflow runs automatically and posts a what-if diff comment.
+2. Review the what-if diff — confirm no unintended resource changes.
+3. Merge when satisfied. The `deploy.yml` workflow runs Bicep before app deployment.
+
+```bash
+# Manual what-if (optional, for local review)
+az deployment group what-if \
+  --resource-group rg-<%workload%>-staging \
+  --template-file infra/main.bicep \
+  --parameters infra/parameters.staging.bicepparam
+```
+
+## Verify
+
+- [ ] GitHub Actions deploy workflow completes green.
+- [ ] Health endpoint responds: `curl https://<app-fqdn>/health`.
+- [ ] Application Insights shows no spike in exceptions.
+- [ ] Key metrics (response time, error rate) within normal range.
+
+<!-- TODO: Add project-specific health check URLs. -->
+
+## Rollback
+
+If the deploy causes errors, roll back to the previous Container App revision:
+
+```bash
+# List recent revisions
+az containerapp revision list \
+  --name ca-<%workload%>-<env> \
+  --resource-group rg-<%workload%>-<env> \
+  -o table
+
+# Activate previous revision
+az containerapp revision activate \
+  --name ca-<%workload%>-<env> \
+  --resource-group rg-<%workload%>-<env> \
+  --revision <PREVIOUS_REVISION_NAME>
+
+# Deactivate bad revision
+az containerapp revision deactivate \
+  --name ca-<%workload%>-<env> \
+  --resource-group rg-<%workload%>-<env> \
+  --revision <BAD_REVISION_NAME>
+```
+
+For Function Apps, use deployment slots or re-deploy the previous image tag.
+
+## Known failure modes
+
+- **OIDC auth failure** (`AADSTS70021`): federated credential subject mismatch — check `docs/conventions/secrets.md` for exact subject format.
+- **Bicep validation fails**: run `az bicep build --file infra/main.bicep` locally to surface errors before re-pushing.
+- **Container App stuck in `Provisioning`**: check Application Insights and Container App system logs (`az containerapp logs show`).
+- **Health check fails after deploy**: check that `FUNCTIONS_NODE_RUNTIME` (Functions) or the container image tag matches the deployed artifact.
+
+## Notes
+
+See `docs/conventions/infrastructure.md` for the full IaC composition pattern and AVM version policy.
