@@ -76,6 +76,25 @@ For cross-environment (shared) resources: use `shared` as the suffix.
 - Add when resource must exist twice in same scope: `func-myapp-dev-001`, `func-myapp-dev-002`.
 - Numbering starts at `001`, zero-padded.
 
+### Length warnings
+
+Some abbrev + env combinations cut close to the resource length cap. Plan workload-slug length up-front:
+
+- **Key Vault** — 24 chars max. Pattern `kv-{workload}-{env}`:
+  - `staging` env (7 chars) → `kv-` + workload + `-staging` = 11 fixed → workload max 13 chars
+  - `prod` env (4 chars) → workload max 16 chars
+  - With region embedded (`kv-{workload}-staging-aue`), workload max drops to **9 chars**
+- **Storage Account** — 24 chars max, lowercase, **no hyphens**. Pattern `st{workload}{env}`:
+  - `staging` env → workload max 15 chars
+  - `prod` env → workload max 18 chars
+  - With region (`st{workload}staging{aue}`) → workload max 12 chars
+- **Container App** — 32 chars max. Pattern `ca-{workload}-{appName}-{env}`:
+  - `staging` env, 4-char `appName` (e.g. `api`, `worker`) → workload max ~16 chars
+- **Container Registry** — 50 chars max, lowercase, no hyphens. Generous; almost always fits.
+- **Cosmos DB Account** — 44 chars max, lowercase. Generous; usually fits with region.
+
+If a chosen workload slug pushes past the cap on the tightest resource (KV), shorten the slug rather than the env name — env names are fixed across the convention.
+
 ### Region embedding
 
 - **Default**: don't embed region (saves length, region is implicit per RG).
