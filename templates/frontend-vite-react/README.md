@@ -67,4 +67,4 @@ Vite + React + TypeScript + MSAL → deployed to Azure Static Web Apps.
 ## See also
 
 - `/home/skip/janus/docs/conventions/layering.md#frontend`
-- `/home/skip/janus/docs/conventions/state-management.md`
+- `/home/skip/janus/docs/conventions/frontend-state-management.md`

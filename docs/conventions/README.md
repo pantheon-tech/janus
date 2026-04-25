@@ -16,6 +16,7 @@ project's own `docs/adr/`.
 | Chapter | Topic |
 |---|---|
 | [agents-md.md](./agents-md.md) | `AGENTS.md` shape, length caps, emphasis rules |
+| [avm-versions.md](./avm-versions.md) | Pinned AVM module versions (refresh recipe) |
 | [azure-naming.md](./azure-naming.md) | Full Azure resource naming reference |
 | [code-style.md](./code-style.md) | Formatting, naming, imports, quotes, line width |
 | [docs-shapes.md](./docs-shapes.md) | The doc shapes, lifecycle, length caps |
