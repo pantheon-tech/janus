@@ -30,7 +30,7 @@ pnpm install              # dev tooling (biome, commitlint, lefthook)
 pnpm lint                 # biome check
 pnpm format               # biome format --write
 pnpm check                # biome check --write
-./scripts/scaffold.sh     # generate a new project from templates/ (placeholder)
+./scripts/scaffold.sh     # generate a new project from templates/
 ./scripts/version.sh      # print janus version
 ```
 
@@ -68,6 +68,4 @@ See `docs/adr/` (currently empty — base conventions in `docs/conventions/`).
 
 ## Known Issues
 
-- (2026-04-24) Six archetype templates contain README/NOTE only; full scaffold content TODO.
-- (2026-04-24) `scripts/scaffold.sh` is a placeholder.
 - (2026-04-24) `_shared/.claude/hooks/` directory exists but contains no hook scripts yet.

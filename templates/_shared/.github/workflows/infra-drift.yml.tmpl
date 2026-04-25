@@ -1,0 +1,87 @@
+{{=<% %>=}}
+name: Infra Drift Check
+
+on:
+  schedule:
+    - cron: '0 9 * * *'   # daily at 09:00 UTC
+  workflow_dispatch:        # allow manual trigger
+
+concurrency:
+  group: infra-drift
+  cancel-in-progress: true
+
+permissions:
+  id-token: write
+  contents: read
+  issues: write
+
+jobs:
+  drift:
+    strategy:
+      fail-fast: false
+      matrix:
+        env: [staging, prod]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: ${{ matrix.env }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      - uses: azure/login@2dd0bbf4064d5a1812889dc200bb8eed2597f82a  # v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Pin bicep CLI
+        run: az bicep install --version v0.42.1
+
+      - name: Bicep build
+        run: az bicep build --file infra/main.bicep
+
+      - name: What-if
+        id: whatif
+        run: |
+          RESULT=$(az deployment group what-if \
+            --resource-group rg-<%workload%>-${{ matrix.env }} \
+            --template-file infra/main.bicep \
+            --parameters infra/parameters.${{ matrix.env }}.bicepparam \
+            --no-pretty-print 2>&1)
+          LINES=$(echo "$RESULT" | wc -l)
+          echo "lines=$LINES" >> "$GITHUB_OUTPUT"
+          {
+            echo "result<<RESULTEOF"
+            echo "$RESULT"
+            echo "RESULTEOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Open drift issue
+        if: ${{ steps.whatif.outputs.lines > 0 }}
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd  # v8.0.0
+        with:
+          script: |
+            const env = '${{ matrix.env }}';
+            const lines = '${{ steps.whatif.outputs.lines }}';
+            const result = `${{ steps.whatif.outputs.result }}`;
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `[infra-drift] ${env} infra has drifted from IaC (${lines} change lines)`,
+              labels: ['infra', 'drift'],
+              body: [
+                `### Infra drift detected — \`${env}\``,
+                '',
+                `The nightly \`az deployment group what-if\` run detected ${lines} change lines`,
+                'between the current Azure state and the IaC templates.',
+                '',
+                '**Action required**: review the diff below and either:',
+                '- Apply the IaC to reconcile drift, or',
+                '- Update the templates to match intentional manual changes.',
+                '',
+                '```',
+                result.slice(0, 60000),
+                '```',
+                '',
+                `*Triggered by: ${context.workflow} @ ${context.sha.slice(0, 7)}*`,
+              ].join('\n'),
+            });
