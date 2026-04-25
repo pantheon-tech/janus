@@ -1,12 +1,25 @@
 {
-  "$schema": "https://biomejs.dev/schemas/2.0.0/schema.json",
+  "$schema": "https://biomejs.dev/schemas/2.4.13/schema.json",
   "vcs": {
     "enabled": true,
     "clientKind": "git",
     "useIgnoreFile": true
   },
   "files": {
-    "ignore": ["node_modules", "dist", "build", "out", "coverage", ".next", ".astro", "*.min.js", "pnpm-lock.yaml"]
+    "includes": [
+      "**",
+      "!**/node_modules",
+      "!**/dist",
+      "!**/build",
+      "!**/out",
+      "!**/coverage",
+      "!**/.next",
+      "!**/.astro",
+      "!**/.claude",
+      "!**/*.min.js",
+      "!**/pnpm-lock.yaml",
+      "!templates"
+    ]
   },
   "formatter": {
     "enabled": true,
@@ -39,7 +52,7 @@
       },
       "suspicious": {
         "noExplicitAny": "error",
-        "noConsoleLog": "warn"
+        "noConsole": { "level": "warn", "options": { "allow": ["warn", "error"] } }
       },
       "correctness": {
         "noUnusedImports": "error",
@@ -47,15 +60,32 @@
       },
       "complexity": {
         "noBannedTypes": "error"
+      },
+      "performance": {
+        "useTopLevelRegex": "off"
       }
     }
   },
-  "organizeImports": {
-    "enabled": true
-  },
+  "assist": { "actions": { "source": { "organizeImports": "on" } } },
   "json": {
     "formatter": {
       "indentWidth": 2
     }
-  }
+  },
+  "overrides": [
+    {
+      "includes": [
+        "**/*.config.{js,ts,mjs,cjs,mts,cts}",
+        "**/vitest.config.*",
+        "**/commitlint.config.*"
+      ],
+      "linter": {
+        "rules": {
+          "style": {
+            "noDefaultExport": "off"
+          }
+        }
+      }
+    }
+  ]
 }

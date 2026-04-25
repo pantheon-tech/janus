@@ -1,0 +1,126 @@
+name: janus CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+      - uses: pnpm/action-setup@8b2eead6074fefa43a68bf4c9e0f03ea4126b5ba  # v6.0.3
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e  # v6.4.0
+        with:
+          node-version: '24'
+          cache: 'pnpm'
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm biome check .
+
+  parity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+      - name: Verify janus root vs templates/_shared parity
+        run: |
+          # The canonical versions of these files live in templates/_shared/.
+          # janus root must mirror them so the kit dogfoods what it ships.
+          set -e
+          drift=0
+          for f in biome.jsonc tsconfig.base.json lefthook.yml commitlint.config.js .editorconfig .gitignore .gitattributes; do
+            if ! diff -q "$f" "templates/_shared/$f" >/dev/null 2>&1; then
+              echo "::error file=$f::Drift between root and templates/_shared/$f"
+              diff -u "templates/_shared/$f" "$f" | head -40 || true
+              drift=1
+            fi
+          done
+          if [ "$drift" -ne 0 ]; then
+            echo "Parity check failed — run 'cp templates/_shared/<file> .' for each drifted file"
+            exit 1
+          fi
+          echo "Parity OK"
+
+  scaffold-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+      - uses: pnpm/action-setup@8b2eead6074fefa43a68bf4c9e0f03ea4126b5ba  # v6.0.3
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e  # v6.4.0
+        with:
+          node-version: '24'
+          cache: 'pnpm'
+      - name: Install janus deps (provides jq, biome via pnpm cache)
+        run: pnpm install --frozen-lockfile
+      - name: Run scaffold smoke test
+        run: bash tests/scaffold-smoke-test.sh
+
+  workflows-lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+      - name: Render workflow templates with stub values
+        run: |
+          set -euo pipefail
+          export workload="lintapp"
+          export description="actionlint render target"
+          export archetype="generic-ts"
+          export github_org="testorg"
+          export author="Test User"
+          export author_email="test@example.com"
+          export node_version="24"
+          export license="MIT"
+          export region="australiaeast"
+          export template_version="v0.0.0-lint"
+          export year="$(date +%Y)"
+          export date="$(date +%Y-%m-%d)"
+          mkdir -p /tmp/rendered/.github/workflows
+          MO="$PWD/scripts/lib/mo"
+          for f in templates/_shared/.github/workflows/*.yml.tmpl; do
+            base="$(basename "$f" .tmpl)"
+            "$MO" "$f" > "/tmp/rendered/.github/workflows/$base"
+          done
+          # Mirror janus's own workflows too so actionlint sees them.
+          mkdir -p /tmp/rendered-janus/.github/workflows
+          cp .github/workflows/*.yml /tmp/rendered-janus/.github/workflows/
+      - name: actionlint (rendered templates)
+        uses: reviewdog/action-actionlint@6fb7acc99f4a1008869fa8a0f09cfca740837d9d  # v1.72.0
+        with:
+          working-directory: /tmp/rendered
+          fail_level: error
+      - name: actionlint (janus self)
+        uses: reviewdog/action-actionlint@6fb7acc99f4a1008869fa8a0f09cfca740837d9d  # v1.72.0
+        with:
+          working-directory: /tmp/rendered-janus
+          fail_level: error
+
+  ci-pass:
+    needs: [lint, parity, scaffold-smoke, workflows-lint]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Aggregate results
+        run: |
+          for r in \
+            "${{ needs.lint.result }}" \
+            "${{ needs.parity.result }}" \
+            "${{ needs.scaffold-smoke.result }}" \
+            "${{ needs.workflows-lint.result }}"; do
+            if [ "$r" != "success" ]; then
+              echo "Upstream job result: $r"
+              exit 1
+            fi
+          done
+          echo "All upstream jobs passed."

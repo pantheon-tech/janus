@@ -1,5 +1,9 @@
-import { defineConfig } from 'vitest/config';
 import path from 'node:path';
+import { defineConfig } from 'vitest/config';
+
+// Node 20+ exposes `import.meta.dirname` as a first-class equivalent of
+// CommonJS `__dirname`. Use it instead of `fileURLToPath(import.meta.url)`.
+const here = import.meta.dirname;
 
 export default defineConfig({
   test: {
@@ -12,7 +16,7 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      '@': path.resolve(__dirname, './src'),
+      '@': path.resolve(here, './src'),
     },
   },
 });

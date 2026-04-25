@@ -57,6 +57,12 @@ fi
 
 read -r -p "Description: " DESCRIPTION
 
+read -r -p "License [MIT]: " LICENSE
+LICENSE="${LICENSE:-MIT}"
+
+read -r -p "Azure region [australiaeast]: " REGION
+REGION="${REGION:-australiaeast}"
+
 TARGET_DIR="${1:-${HOME}/git/${WORKLOAD}}"
 read -r -p "Target directory [${TARGET_DIR}]: " ENTERED_TARGET
 TARGET_DIR="${ENTERED_TARGET:-${TARGET_DIR}}"
@@ -175,8 +181,8 @@ export github_org="$GITHUB_ORG"
 export author="$AUTHOR"
 export author_email="$AUTHOR_EMAIL"
 export node_version="24"
-export license="MIT"
-export region="australiaeast"
+export license="$LICENSE"
+export region="$REGION"
 export template_version="v${JANUS_VERSION}"
 export year="$(date +%Y)"
 export date="$(date +%Y-%m-%d)"
@@ -209,6 +215,54 @@ while IFS= read -r tmpl; do
   out="${rel%.tmpl}"
   render_tmpl "$tmpl" "$out"
 done < <(find "$SHARED" -name '*.tmpl' -type f)
+
+# 2b. Apply archetype overlays. Each archetype directory under templates/
+#     may contain:
+#       - .env.example      → appended to the shared minimal .env.example
+#       - package.json.tmpl → merged over the shared package.json (jq deep merge)
+#       - any other files   → copied verbatim, with .tmpl suffix stripped + rendered
+#     Anything not listed (README.md, etc.) is rendered through mo when .tmpl,
+#     copied verbatim otherwise.
+ARCH_DIR="${JANUS_ROOT}/templates/${ARCHETYPE}"
+if [ -d "$ARCH_DIR" ]; then
+  # 2b.i — .env.example overlay (append to the shared minimal one)
+  if [ -f "${ARCH_DIR}/.env.example" ]; then
+    {
+      echo
+      cat "${ARCH_DIR}/.env.example"
+    } >> "${TARGET_DIR}/.env.example"
+  fi
+
+  # 2b.ii — package.json.tmpl overlay (jq deep-merge over shared)
+  if [ -f "${ARCH_DIR}/package.json.tmpl" ]; then
+    overlay_rendered="$(mktemp)"
+    "$MO" "${ARCH_DIR}/package.json.tmpl" > "$overlay_rendered"
+    merged="$(mktemp)"
+    jq -s '.[0] * .[1]' "${TARGET_DIR}/package.json" "$overlay_rendered" > "$merged"
+    mv "$merged" "${TARGET_DIR}/package.json"
+    rm -f "$overlay_rendered"
+  fi
+
+  # 2b.iii — copy/render everything else from the archetype directory.
+  #          The archetype's own README.md at the root is META documentation
+  #          (about the archetype) — never shipped into scaffolded projects.
+  ( cd "$ARCH_DIR" && find . -type f \
+      ! -name '.env.example' \
+      ! -name 'package.json.tmpl' \
+      ! -path './README.md' \
+      -print0 | while IFS= read -r -d '' f; do
+        rel="${f#./}"
+        dest="${TARGET_DIR}/${rel}"
+        mkdir -p "$(dirname "$dest")"
+        if [[ "$rel" == *.tmpl ]]; then
+          out="${dest%.tmpl}"
+          "$MO" "$f" > "$out"
+        else
+          cp "$f" "$dest"
+        fi
+      done
+  )
+fi
 
 # 3. Snapshot conventions docs from janus into the target so the project has
 #    its own reference copy (decoupled from janus version drift).

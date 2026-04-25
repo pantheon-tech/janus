@@ -1,5 +1,11 @@
 # lefthook: fast, parallel git hook manager
 # https://lefthook.dev/
+#
+# Gitleaks blocks the commit when the binary is missing. We choose strict
+# behaviour over friendly because a derived project is shipping real code:
+# silently skipping secret-scan because gitleaks isn't installed is the
+# bug that causes the credentials to leak. Install it instead — see
+# https://github.com/gitleaks/gitleaks.
 
 pre-commit:
   parallel: true
@@ -7,12 +13,16 @@ pre-commit:
     biome-check:
       glob: '*.{js,ts,jsx,tsx,json,jsonc}'
       run: pnpm biome check --write --no-errors-on-unmatched {staged_files} && git add {staged_files}
+    typecheck:
+      glob: '*.{ts,tsx}'
+      run: pnpm tsc --noEmit
     gitleaks:
       run: |
         if command -v gitleaks >/dev/null 2>&1; then
           gitleaks protect --staged --redact --verbose
         else
-          echo "gitleaks not installed — skipping secret scan (install: https://github.com/gitleaks/gitleaks)"
+          echo "gitleaks not installed — install via https://github.com/gitleaks/gitleaks"
+          exit 1
         fi
 
 commit-msg:
