@@ -1,0 +1,80 @@
+{{=<% %>=}}
+#!/bin/bash
+# session-start.sh — sync repo, report state, inject context
+#
+# Wired in .claude/settings.json as a SessionStart hook (matcher
+# "startup|clear|compact"). On compaction it re-injects critical
+# project rules so they survive context truncation.
+set -euo pipefail
+
+PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$(pwd)}"
+INPUT=$(cat)
+SOURCE=$(echo "$INPUT" | jq -r '.source // "startup"')
+
+# Skip if not in a git repo (no project state to report)
+if ! git -C "$PROJECT_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  exit 0
+fi
+
+# ── Sync with remote (best-effort — don't block session start on network) ──
+git -C "$PROJECT_DIR" fetch --prune origin >/dev/null 2>&1 || true
+
+# ── Branch state vs base branch ──
+BRANCH=$(git -C "$PROJECT_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unknown")
+BASE_BEHIND=$(git -C "$PROJECT_DIR" rev-list --count <%base_branch%>..origin/<%base_branch%> 2>/dev/null || echo "?")
+BASE_AHEAD=$(git -C "$PROJECT_DIR" rev-list --count origin/<%base_branch%>..<%base_branch%> 2>/dev/null || echo "?")
+
+# ── Recent activity on base branch ──
+RECENT=$(git -C "$PROJECT_DIR" log --oneline -5 origin/<%base_branch%> 2>/dev/null || echo "  (unavailable)")
+
+# ── Active worktrees (excluding the project root) ──
+WORKTREE_COUNT=$(git -C "$PROJECT_DIR" worktree list 2>/dev/null | grep -v "^$PROJECT_DIR " | wc -l || true)
+
+# ── Stale local branches already merged into origin/<%base_branch%> ──
+STALE_BRANCHES=$(git -C "$PROJECT_DIR" branch --merged origin/<%base_branch%> 2>/dev/null \
+  | grep -vE 'main|<%base_branch%>|^\*' | wc -l || true)
+
+# ── Open PRs (cached 1hr) ──
+NOW=$(date +%s)
+PR_CACHE="/tmp/<%workload%>-pr-count.cache"
+PR_COUNT="?"
+if [ -f "$PR_CACHE" ] && [ "$(stat -c %Y "$PR_CACHE" 2>/dev/null || echo 0)" -gt "$((NOW - 3600))" ]; then
+  PR_COUNT=$(cat "$PR_CACHE")
+else
+  PR_COUNT=$(gh pr list --state open --limit 100 --json number -q 'length' 2>/dev/null || echo "?")
+  echo "$PR_COUNT" > "$PR_CACHE" 2>/dev/null || true
+fi
+
+cat <<EOF
+=== Session Context ===
+Branch: $BRANCH | <%base_branch%>: ${BASE_BEHIND} behind, ${BASE_AHEAD} ahead of origin
+Recent (origin/<%base_branch%>):
+$RECENT
+Worktrees: $WORKTREE_COUNT active | Stale local branches: $STALE_BRANCHES | Open PRs: $PR_COUNT
+EOF
+
+# Warn if base branch is behind
+if [ "$BASE_BEHIND" != "0" ] && [ "$BASE_BEHIND" != "?" ]; then
+  echo "⚠ Local <%base_branch%> is $BASE_BEHIND commits behind origin/<%base_branch%> — run: git checkout <%base_branch%> && git pull"
+fi
+
+# Warn about stale branches
+if [ "$STALE_BRANCHES" -gt 5 ] 2>/dev/null; then
+  echo "⚠ $STALE_BRANCHES local branches already merged — consider cleanup (skill: git-clean)"
+fi
+
+# On compaction, re-inject critical rules so they survive context truncation.
+# These are *project-level* invariants the agent must respect; edit per project.
+if [ "$SOURCE" = "compact" ]; then
+  cat <<'COMPACT'
+
+=== Re-injected after compaction ===
+CRITICAL: All code changes happen in worktrees, never directly in the main checkout.
+CRITICAL: Branch off <%base_branch%>, push to <%base_branch%>. Never push to main unless explicitly told.
+CRITICAL: Discovered bugs/improvements get GitHub issues with component + priority + difficulty + effort labels.
+===
+COMPACT
+fi
+
+echo "==="
+exit 0

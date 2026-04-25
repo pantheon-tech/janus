@@ -1,0 +1,39 @@
+{{=<% %>=}}
+#!/bin/bash
+# WorktreeCreate hook: creates an agent worktree branched from origin/<%base_branch%>
+#
+# Agent worktrees live under .claude/worktrees/. Settings.json wires
+# `worktree.symlinkDirectories: ["node_modules"]` so node_modules
+# survives without per-worktree reinstall.
+#
+# Input JSON fields (from Claude Code):
+#   name            — agent name (e.g. "agent-a2033a4d")
+#   cwd             — project root
+#   session_id      — current session ID
+#   hook_event_name — "WorktreeCreate"
+#
+# The hook prints the created worktree path to stdout.
+set -euo pipefail
+
+INPUT=$(cat)
+NAME=$(echo "$INPUT" | jq -r '.name // ""')
+CWD=$(echo "$INPUT" | jq -r '.cwd // ""')
+
+if [ -z "$NAME" ]; then
+  echo "Error: no name provided in WorktreeCreate input" >&2
+  exit 1
+fi
+
+PROJECT_DIR="${CWD:-$(pwd)}"
+WORKTREE_PATH="${PROJECT_DIR}/.claude/worktrees/${NAME}"
+
+# Ensure remote state is current (best-effort)
+git -C "$PROJECT_DIR" fetch --prune origin 2>/dev/null || true
+
+# Create the worktree detached from origin/<%base_branch%>.
+# The agent creates its own branch inside the worktree.
+mkdir -p "$(dirname "$WORKTREE_PATH")"
+git -C "$PROJECT_DIR" worktree add "$WORKTREE_PATH" --detach origin/<%base_branch%> 2>/dev/null
+
+# Return the worktree path on stdout — Claude Code reads this.
+echo "$WORKTREE_PATH"

@@ -186,6 +186,10 @@ export region="$REGION"
 export template_version="v${JANUS_VERSION}"
 export year="$(date +%Y)"
 export date="$(date +%Y-%m-%d)"
+# Working branch — janus convention is two-branch (staging + main). Hooks
+# and skills reference this slot when checking divergence, opening agent
+# worktrees, and pruning merged branches.
+export base_branch="staging"
 
 render_tmpl() {
   local src="$1" out="$2"
@@ -364,7 +368,24 @@ SETTINGS_BASE=$(jq -n \
         "Bash(wget * | sh)"
       ]
     },
-    cleanupPeriodDays: 7
+    cleanupPeriodDays: 7,
+    hooks: {
+      SessionStart: [
+        {
+          matcher: "startup|clear|compact",
+          hooks: [{type: "command", command: ".claude/hooks/session-start.sh", timeout: 15}]
+        }
+      ],
+      SessionEnd: [
+        {hooks: [{type: "command", command: ".claude/hooks/session-end.sh", timeout: 15}]}
+      ],
+      WorktreeCreate: [
+        {hooks: [{type: "command", command: ".claude/hooks/setup-worktree.sh", timeout: 30}]}
+      ],
+      WorktreeRemove: [
+        {hooks: [{type: "command", command: ".claude/hooks/cleanup-worktree.sh", timeout: 15}]}
+      ]
+    }
   }')
 
 if [ ${#PLUGINS[@]} -gt 0 ]; then
@@ -375,6 +396,13 @@ if [ ${#PLUGINS[@]} -gt 0 ]; then
     > .claude/settings.json
 else
   echo "$SETTINGS_BASE" > .claude/settings.json
+fi
+
+# 4b. Restore +x bit on rendered hook scripts. mo writes through to a new
+#     file with default umask permissions, so the +x bit on .tmpl sources
+#     does not survive rendering.
+if [ -d .claude/hooks ]; then
+  chmod +x .claude/hooks/*.sh 2>/dev/null || true
 fi
 
 # 5. Generate pnpm lockfile so the first push to CI does not fail on
