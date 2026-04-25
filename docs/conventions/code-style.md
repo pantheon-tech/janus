@@ -74,6 +74,30 @@ import { helper } from '../../helpers'; // ✗ use @/... alias
 export default function createOrder() { } // ✗ default export
 ```
 
+### NodeNext extensions
+
+`tsconfig.base.json` sets `module: NodeNext`. Under NodeNext (and `Node16`), import statements MUST include the file extension — and that extension is `.js`, even when the source file is `.ts`:
+
+```ts
+// Good
+import { logger } from './logger.js';
+import { ordersRepo } from '@/repositories/orders.repo.js';
+
+// Bad — fails at runtime under NodeNext (ERR_MODULE_NOT_FOUND)
+import { logger } from './logger';
+```
+
+This catches new contributors who expect bundler-style extensionless imports. Configure VS Code to add `.js` automatically:
+
+```jsonc
+// .vscode/settings.json
+{
+  "typescript.preferences.importModuleSpecifierEnding": "js"
+}
+```
+
+Type-only imports follow the same rule: `import type { X } from './types.js'`.
+
 ## TypeScript strictness
 
 `tsconfig.base.json` enforces:
