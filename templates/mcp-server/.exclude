@@ -1,0 +1,8 @@
+# Paths under templates/_shared that must NOT ship in the mcp-server archetype.
+# One pattern per line, relative to templates/_shared/. Comments (#) and blank
+# lines are ignored. A trailing slash matches the directory and everything
+# under it; otherwise the line matches the exact relative path.
+infra/
+.github/workflows/deploy.yml.tmpl
+.github/workflows/infra-preview.yml.tmpl
+.github/workflows/claude-autofix.yml.tmpl

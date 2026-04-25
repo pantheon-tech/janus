@@ -1,0 +1,22 @@
+{{=<% %>=}}
+{
+  "type": "commonjs",
+  "private": false,
+  "bin": {
+    "<%workload%>": "./dist/index.js"
+  },
+  "main": "./dist/index.js",
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "build": "tsup src/index.ts --format cjs --clean --no-dts && chmod +x dist/index.js",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "~1.29.0",
+    "zod": "~4.0.0"
+  },
+  "devDependencies": {
+    "tsx": "~4.21.0",
+    "tsup": "~8.5.1"
+  }
+}
