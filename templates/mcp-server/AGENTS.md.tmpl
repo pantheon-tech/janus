@@ -1,0 +1,130 @@
+{{=<% %>=}}
+# <%workload%>
+
+## Overview
+
+<%description%>
+
+## Tech Stack
+
+| Aspect | Choice |
+|---|---|
+| Package manager | pnpm |
+| Runtime | Node <%node_version%> |
+| Language | TypeScript (strict) |
+| Lint + format | Biome v2 |
+| Tests | Vitest |
+| Dev runner | tsx |
+| Build | tsup (CJS, executable) |
+| MCP transport | stdio (`@modelcontextprotocol/sdk`) |
+| Schema validation | zod |
+| Archetype | mcp-server |
+
+## Commands
+
+```bash
+pnpm install
+pnpm dev          # tsx src/index.ts — runs the server (reads from stdin, exits on EOF)
+pnpm build        # tsup → dist/index.js  (CJS, executable bit set)
+pnpm start        # node dist/index.js
+pnpm test         # vitest
+pnpm lint         # biome check
+pnpm typecheck    # tsc --noEmit
+```
+
+## Branching
+
+- `staging` — working branch
+- `main` — production (release-please manages releases from here)
+
+## Structure
+
+```
+<%workload%>/
+├── src/
+│   ├── index.ts        # stdio transport entry — do NOT log here to stdout
+│   ├── echo.ts         # example tool: pure handler + zod schema
+│   └── <tool>.ts       # add one file per tool
+├── tests/
+│   └── server.test.ts  # tests import pure handlers — no stdio required
+├── package.json
+├── tsconfig.json
+└── AGENTS.md
+```
+
+## Critical Context
+
+### stdio transport — NEVER write to stdout
+
+MCP protocol messages travel over **stdout**. Any `console.log()` or other
+stdout write corrupts the JSON-RPC stream and makes the host consider the
+server broken. Always use `console.error()` for diagnostics — it writes to
+stderr and is invisible to the MCP layer.
+
+### Zod schemas for tool inputs
+
+Register tools with a zod schema for `inputSchema`. The SDK automatically
+converts it to JSON Schema for the protocol and validates incoming calls.
+Keep schemas in separate files (e.g. `src/<tool>.ts`) so they can be imported
+by tests without starting the transport.
+
+### CJS output (`"type": "commonjs"`)
+
+This archetype builds to CJS (`tsup --format cjs`) because the entry point
+uses a `#!/usr/bin/env node` shebang and is invoked directly. The
+`package.json` sets `"type": "commonjs"` so Node does not try to interpret
+`.js` as ESM. Import SDK subpath exports with `.js` extension:
+
+```ts
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+```
+
+### Adding new tools
+
+1. Create `src/<verb>-<noun>.ts` exporting the zod input schema and a pure
+   handler function.
+2. Register the tool in `src/index.ts` via `server.registerTool(...)`.
+3. Add a test in `tests/<verb>-<noun>.test.ts` that imports the handler directly.
+
+Confirmation pattern for destructive tools:
+```ts
+// First call: return a preview
+if (!input.confirm) {
+  return { content: [{ type: 'text', text: `Preview: will delete ${input.id}` }] };
+}
+// Second call with confirm: true — execute
+```
+
+### Publishing
+
+The server is published to npm (`"private": false`). After merging to `main`,
+release-please opens a release PR with a bumped version and CHANGELOG. When
+that PR merges, it creates a GitHub Release. Wire a separate `npm publish`
+step (gated on `release_created`) if you want automatic npm publishing.
+
+**Install for users** (after publish):
+```bash
+npm install -g <%workload%>
+```
+
+**Claude Code `mcpServers` config** (see README for details):
+```json
+{
+  "mcpServers": {
+    "<%workload%>": {
+      "command": "<%workload%>",
+      "args": []
+    }
+  }
+}
+```
+
+## Known Issues
+
+- <dated list>
+
+---
+
+*Last reviewed: <%date%>*
+*Template: janus <%template_version%>*

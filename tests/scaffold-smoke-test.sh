@@ -113,6 +113,82 @@ verify_project() {
   fi
 }
 
+
+# Deep verification for archetypes that ship real build targets.
+# Runs after verify_project (which already confirmed the project structure).
+verify_mcp_server() {
+  local target="$1"
+  local -a errors=()
+
+  # Full install needed for build/test/lint to work.
+  if ! ( cd "$target" && pnpm install --silent ) >/dev/null 2>&1; then
+    echo "FAIL: mcp-server deep — pnpm install failed"
+    FAIL=$((FAIL + 1))
+    return
+  fi
+
+  # typecheck
+  if ! ( cd "$target" && pnpm typecheck ) >/dev/null 2>&1; then
+    errors+=("pnpm typecheck failed")
+  fi
+
+  # lint
+  if ! ( cd "$target" && pnpm lint ) >/dev/null 2>&1; then
+    errors+=("pnpm lint failed")
+  fi
+
+  # test
+  if ! ( cd "$target" && pnpm test ) >/dev/null 2>&1; then
+    errors+=("pnpm test failed")
+  fi
+
+  # build
+  if ! ( cd "$target" && pnpm build ) >/dev/null 2>&1; then
+    errors+=("pnpm build failed")
+  fi
+
+  # dist/index.js must exist with shebang
+  if [ ! -f "$target/dist/index.js" ]; then
+    errors+=("dist/index.js missing after build")
+  else
+    local first_line
+    first_line=$(head -1 "$target/dist/index.js")
+    if [[ "$first_line" != "#!/usr/bin/env node" ]]; then
+      errors+=("dist/index.js missing shebang (got: $first_line)")
+    fi
+    if [ ! -x "$target/dist/index.js" ]; then
+      errors+=("dist/index.js not executable")
+    fi
+    # Binary runs cleanly when stdin closes immediately (no output to stdout)
+    local stdout_out
+    stdout_out=$(node "$target/dist/index.js" < /dev/null 2>/dev/null || true)
+    # We expect no MCP protocol frames; any stdout = broken server
+    # (It will exit with non-zero due to stdin EOF, which is fine for this test)
+    if [ -n "$stdout_out" ]; then
+      errors+=("dist/index.js wrote unexpected output to stdout on EOF stdin")
+    fi
+  fi
+
+  # infra/ must not exist
+  if [ -d "$target/infra" ]; then
+    errors+=("infra/ directory present but should be excluded")
+  fi
+
+  # deploy.yml must not exist
+  if [ -f "$target/.github/workflows/deploy.yml" ]; then
+    errors+=(".github/workflows/deploy.yml present but should be excluded")
+  fi
+
+  if [ ${#errors[@]} -eq 0 ]; then
+    echo "PASS: archetype 6 (deep)"
+    PASS=$((PASS + 1))
+  else
+    echo "FAIL: archetype 6 (deep)"
+    for e in "${errors[@]}"; do echo "  - $e"; done
+    FAIL=$((FAIL + 1))
+  fi
+}
+
 echo "Smoke-testing janus scaffold..."
 echo "  janus root: $JANUS_ROOT"
 echo "  scratch:    $TEST_BASE"
@@ -130,6 +206,20 @@ for arch_num in 1 4; do
   fi
   verify_project "$target" "$arch_num"
 done
+
+# mcp-server: structural check + deep build/test/lint/typecheck verification.
+echo "--- Archetype 6 (mcp-server) ---"
+target="${TEST_BASE}/test-6"
+if ! run_scaffold "$target" 6; then
+  echo "FAIL: archetype 6 — scaffold script errored"
+  FAIL=$((FAIL + 1))
+else
+  verify_project "$target" 6
+  # Only run deep checks if structural check passed.
+  if [ $FAIL -eq 0 ]; then
+    verify_mcp_server "$target"
+  fi
+fi
 
 echo
 echo "Results: $PASS passed, $FAIL failed"

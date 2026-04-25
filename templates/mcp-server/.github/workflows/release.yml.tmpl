@@ -1,0 +1,26 @@
+{{=<% %>=}}
+# Opt-in: release-please. Delete this file (and the `googleapis/release-please`
+# config it manages) if the project doesn't publish releases.
+#
+# release-please reads Conventional Commits on `main`, opens / maintains a
+# release PR with the bumped version + CHANGELOG, and publishes a GitHub
+# release when that PR merges. It does NOT publish to npm — wire `npm publish`
+# into a separate job (gated on `if: needs.release-please.outputs.release_created`)
+# if you want that.
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7  # v5.0.0
+        with:
+          release-type: node
