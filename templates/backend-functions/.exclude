@@ -1,0 +1,4 @@
+# Paths under templates/_shared/ that must NOT ship in this archetype.
+# This archetype has its own src/ + tests/ — drop the _shared stubs.
+src/
+tests/
