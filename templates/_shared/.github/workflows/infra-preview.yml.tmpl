@@ -33,6 +33,12 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
+      # Pin bicep CLI to ≥ 0.42.1 so the 2026-01-01 Container App type
+      # definitions are available and BCP081 warnings don't appear.
+      # See docs/conventions/avm-versions.md for context.
+      - name: Pin bicep CLI
+        run: az bicep install --version v0.42.1
+
       - name: Bicep build
         run: az bicep build --file infra/main.bicep
 
