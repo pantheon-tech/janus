@@ -1,0 +1,38 @@
+version: 2
+updates:
+  # janus's own JS/TS deps (biome, lefthook, commitlint).
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '04:00'
+      timezone: Pacific/Auckland
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - npm
+    commit-message:
+      prefix: chore(deps)
+    groups:
+      dev-dependencies:
+        dependency-type: development
+        update-types:
+          - minor
+          - patch
+
+  # GitHub Actions in janus's own workflows. Dependabot bumps SHA-pinned
+  # `uses:` lines to the latest release tag, preserving the SHA pin.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '04:00'
+      timezone: Pacific/Auckland
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - github-actions
+    commit-message:
+      prefix: chore(deps)
