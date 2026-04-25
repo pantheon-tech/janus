@@ -286,7 +286,7 @@ if [ -d "$ARCH_DIR" ]; then
   #          (about the archetype) — never shipped into scaffolded projects.
   ( cd "$ARCH_DIR" && find . -type f \
       ! -name '.env.example' \
-      ! -name 'package.json.tmpl' \
+      ! -path './package.json.tmpl' \
       ! -name '.exclude' \
       ! -path './README.md' \
       -print0 | while IFS= read -r -d '' f; do
