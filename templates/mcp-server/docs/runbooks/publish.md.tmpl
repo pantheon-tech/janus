@@ -1,0 +1,64 @@
+{{=<% %>=}}
+---
+title: Publish <%workload%> to npm
+type: runbook
+last_reviewed: <%date%>
+last_executed: YYYY-MM-DD
+owners: [<%github_org%>]
+---
+
+# Publish <%workload%> to npm
+
+Release the MCP server package to the npm registry via release-please automation.
+
+## Prereqs
+
+- Access: npm publish rights for the `<%workload%>` package
+- State: all changes merged to `main`; CI green
+- Tools: `npm` (for manual fallback only)
+
+## Steps
+
+Releases are automated via release-please. The normal flow requires no manual steps:
+
+1. Merge work to `main`.
+2. release-please opens a release PR with a bumped version and updated CHANGELOG.
+3. Merge the release PR — release-please creates a GitHub Release and tag.
+4. The `npm publish` step in `.github/workflows/release.yml` fires on `release_created`
+   and publishes to npm automatically.
+
+**Manual fallback** (if automation fails):
+
+```bash
+pnpm build
+npm publish --access public
+```
+
+## Verify
+
+```bash
+npm info <%workload%> version
+```
+
+Confirm the published version matches the release tag.
+
+## Rollback
+
+npm does not support unpublishing versions older than 72 hours except via support request.
+If a broken version is published:
+
+1. Publish a patch release that reverts the breakage.
+2. Add the broken version to `.npmignore` or deprecate it:
+   ```bash
+   npm deprecate <%workload%>@<bad-version> "broken — use <good-version>"
+   ```
+
+## Known failure modes
+
+- **`npm publish` denied**: Check that `NPM_TOKEN` secret is set in the GitHub repository and has publish rights.
+- **Version already exists**: release-please bumped the same version twice — check for duplicate release PRs and close the stale one.
+
+## Notes
+
+- The `package.json` `"private": false` is required for `npm publish` to work.
+- `tsup --format cjs --no-dts` is intentional — consumers import the server as a CLI tool, not a library.

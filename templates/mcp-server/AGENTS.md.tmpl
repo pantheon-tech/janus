@@ -98,17 +98,14 @@ if (!input.confirm) {
 
 ### Publishing
 
-The server is published to npm (`"private": false`). After merging to `main`,
-release-please opens a release PR with a bumped version and CHANGELOG. When
-that PR merges, it creates a GitHub Release. Wire a separate `npm publish`
-step (gated on `release_created`) if you want automatic npm publishing.
+See `docs/runbooks/publish.md` for the full release flow.
 
-**Install for users** (after publish):
+Quick reference — install for users (after publish):
 ```bash
 npm install -g <%workload%>
 ```
 
-**Claude Code `mcpServers` config** (see README for details):
+Claude Code `mcpServers` config (see README for details):
 ```json
 {
   "mcpServers": {
@@ -119,6 +116,13 @@ npm install -g <%workload%>
   }
 }
 ```
+
+## Design Decisions
+
+- Stack inherited from janus <%template_version%> — see `docs/conventions/stack.md`.
+- See `docs/adr/` for project-specific architectural decisions.
+- **Decision: stdio transport (not HTTP)** — MCP convention; simplifies integration with Claude Code's `mcpServers` config (no port management, works across OS process boundaries).
+- **Decision: CommonJS output** — required because the npm-published `bin` entry must be a single executable file. Node resolves the shebang entry as CJS by default; the `"type": "commonjs"` in `package.json` makes this explicit and consistent.
 
 ## Known Issues
 
