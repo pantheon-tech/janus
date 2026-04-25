@@ -2,13 +2,16 @@
 title: Documentation Shapes
 type: reference
 last_reviewed: 2026-04-24
+owners: [@skipnz]
 ---
 
 # Documentation Shapes
 
-Every file under `docs/` (excluding `docs/reference/` for auto-generated artefacts and `docs/user-guide/` for end-user content) is one of **five shapes**. No sixth.
+Every file under `docs/` (excluding `docs/reference/` for auto-generated
+artefacts and `docs/user-guide/` for end-user content) is one of **six
+shapes**.
 
-## The five
+## The six
 
 | Shape | Location | Purpose | Lifecycle |
 |---|---|---|---|
@@ -17,15 +20,16 @@ Every file under `docs/` (excluding `docs/reference/` for auto-generated artefac
 | ADR | `docs/adr/` | Record an architectural decision | **Append-only**; supersede via new ADR |
 | Plan | `docs/plans/` | Implementation plan | Living: `active/` → `archived/` |
 | Runbook | `docs/runbooks/` | Operational procedure | Living, `last_reviewed` + `last_executed` frontmatter |
+| Reference | `docs/conventions/`, `docs/architecture.md` | Standing reference / explanation | Living, evolves with the codebase |
 
 ## Frontmatter
 
-Required on AGENTS.md, Plans, Runbooks:
+Required on AGENTS.md, Plans, Runbooks, References:
 
 ```yaml
 ---
 title: <Title>
-type: agents | plan | runbook
+type: agents | plan | runbook | reference
 last_reviewed: YYYY-MM-DD
 last_executed: YYYY-MM-DD    # runbooks only
 owners: [<github-handle>]
@@ -34,21 +38,36 @@ owners: [<github-handle>]
 
 ## ADR shape
 
-[MADR](https://adr.github.io/madr/). Numbered sequentially from 0001. **Append-only** — never rewrite an accepted ADR; supersede via a new ADR that links back.
+[MADR](https://adr.github.io/madr/). Numbered sequentially from 0001.
+**Append-only** — never rewrite an accepted ADR; supersede via a new ADR that
+links back.
 
-ADRs document **architectural decisions specific to this project** — not the conventions janus already provides. If a deviation from a janus convention is the decision, that's an ADR. If it's "we use TypeScript", that's not.
+ADRs document **architectural decisions specific to this project** — not the
+conventions janus already provides. If a deviation from a janus convention is
+the decision, that's an ADR. If it's "we use TypeScript", that's not.
 
 Status lifecycle: `proposed` → `accepted` | `rejected` | `deprecated` | `superseded by ADR-NNNN`.
 
 ## Plan shape
 
-Filename: `YYYY-MM-DD-<slug>.md`. Lives in `active/` while in flight; moves to `archived/` on completion or abandonment. `active/` should rarely hold > 3 plans.
+Filename: `YYYY-MM-DD-<slug>.md`. Lives in `active/` while in flight; moves to
+`archived/` on completion or abandonment. `active/` should rarely hold > 3
+plans.
 
 ## Runbook shape
 
-Mandatory sections: Prereqs, Steps, Verify, Rollback. Frontmatter `last_reviewed` and `last_executed` required.
+Mandatory sections: Prereqs, Steps, Verify, Rollback. Frontmatter
+`last_reviewed` and `last_executed` required.
 
-Re-review every 90 days minimum. `docs-staleness.yml` opens an issue when overdue.
+Re-review every 90 days minimum. `docs-staleness.yml` opens an issue when
+overdue.
+
+## Reference shape
+
+Standing reference material — the chapters in `docs/conventions/` and
+`docs/architecture.md`. Not append-only: references evolve as the codebase
+evolves. They have no `last_executed` (they aren't run), but they do have
+`last_reviewed` and `owners`.
 
 ## Auto-generated reference
 
@@ -58,11 +77,13 @@ Re-review every 90 days minimum. `docs-staleness.yml` opens an issue when overdu
 - `wire-types.md` — from `@<org>/types` via TypeDoc
 - `cli.md` — from `<cli> --help`
 
-Hand-editing files in `docs/reference/` is rejected in PR review. Edit the source; CI regenerates.
+Hand-editing files in `docs/reference/` is rejected in PR review. Edit the
+source; CI regenerates.
 
 ## User-facing documentation
 
-`docs/user-guide/` is the one escape hatch for free-form prose, and only for end-user-facing content (Docusaurus, VitePress, mkdocs).
+`docs/user-guide/` is the one escape hatch for free-form prose, and only for
+end-user-facing content (Docusaurus, VitePress, mkdocs).
 
 ## Length caps
 
@@ -75,8 +96,12 @@ Hand-editing files in `docs/reference/` is rejected in PR review. Edit the sourc
 | ADR | 100 lines | 250 |
 | Plan | 100 lines | 200 |
 | Runbook | 100 lines | 200 |
+| Reference | 250 lines | (no hard max — split by topic) |
 
 Above target: split. Above hard max: an ADR justifies the exception.
+
+This table is the canonical source. Other chapters (e.g. `agents-md.md`)
+reference it rather than duplicating.
 
 ## What does NOT belong in docs/
 

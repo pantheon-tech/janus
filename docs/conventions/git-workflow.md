@@ -2,6 +2,7 @@
 title: Git Workflow
 type: reference
 last_reviewed: 2026-04-24
+owners: [@skipnz]
 ---
 
 # Git Workflow
@@ -127,6 +128,11 @@ GitHub Environment `prod` carries required reviewers, so the deploy job pauses f
 - When merged, creates a git tag and GitHub Release.
 
 For monorepos, ship `release-please-config.json` and `.release-please-manifest.json` at repo root for per-package versioning.
+
+This release-please flow is the convention for **derived projects**. The
+janus kit itself ships with a hand-written
+[Keep-a-Changelog](https://keepachangelog.com/) `CHANGELOG.md` — the kit has
+no deploy and no semantic version cadence to drive automated bumps.
 
 ## Hygiene
 

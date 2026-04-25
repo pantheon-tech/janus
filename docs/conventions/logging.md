@@ -2,6 +2,7 @@
 title: Logging & Observability
 type: reference
 last_reviewed: 2026-04-25
+owners: [@skipnz]
 ---
 
 # Logging & Observability
@@ -91,7 +92,7 @@ sdk.start();
 ```
 
 - **Exporter**: OTLP gRPC to Application Insights' OTel-native endpoint (Azure) or to a self-hosted collector.
-- **Sampling**: 100% in dev, 5-10% head-sampling in prod unless cost becomes an issue.
+- **Sampling**: 100% in staging, 5-10% head-sampling in prod unless cost becomes an issue.
 
 ## Correlation IDs
 
@@ -131,6 +132,6 @@ export function correlationMiddleware(req, res, next) {
 
 ## Alerts
 
-- **Action groups** configured per env. Prod routes to pager; dev routes to email-only.
+- **Action groups** configured per env. Prod routes to pager; staging routes to email-only.
 - **Alerts created via Bicep** (`avm/res/insights/action-group`, `avm/res/insights/metric-alert`) — not portal-clicked. Survives recreation.
 - **SLO-based alerting**: alert on error-rate-burn, not raw error count. See [Google SRE workbook](https://sre.google/workbook/alerting-on-slos/).

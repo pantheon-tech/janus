@@ -2,6 +2,7 @@
 title: Code Style
 type: reference
 last_reviewed: 2026-04-24
+owners: [@skipnz]
 ---
 
 # Code Style
@@ -94,7 +95,7 @@ export default function createOrder() { } // ✗ default export
 
 Hard-line rules:
 
-- **500 lines per file max.** Enforced via Biome `maxFileLines` when available; manual review otherwise.
+- **500 lines per file max.** No automated enforcement — Biome has no `maxFileLines` rule as of v2.4 ([biomejs/biome#2114](https://github.com/biomejs/biome/issues/2114)). Caught in PR review; a `lefthook` hook running `find src -name '*.ts' | xargs wc -l | awk '$1 > 500'` is a reasonable optional belt-and-braces.
 - **50 lines per function max** (exc. JSX render fns, type defs).
 - **5 parameters per function max.** Use an options object for more.
 - **Cyclomatic complexity ≤ 10** per function.

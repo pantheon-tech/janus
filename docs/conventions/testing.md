@@ -2,6 +2,7 @@
 title: Testing
 type: reference
 last_reviewed: 2026-04-24
+owners: [@skipnz]
 ---
 
 # Testing
@@ -10,7 +11,7 @@ last_reviewed: 2026-04-24
 
 | Level | Scope | Tool | Volume |
 |---|---|---|---|
-| Unit | Pure logic, utilities | Vitest | High volume, fast (< 2s whole suite) |
+| Unit | Pure logic, utilities | Vitest | High volume, fast enough to run on every save |
 | Integration | Services + real dependencies | Vitest | Medium volume |
 | Contract | Frontend ↔ backend wire types | Vitest | Low volume |
 | E2E | Browser through real ingress | Playwright | Critical paths only |
@@ -47,9 +48,9 @@ describe('createOrder', () => {
 - **Cosmos**: run against the Cosmos emulator (local) or a dedicated test account (CI).
 - **Postgres / SQL**: testcontainers-node spinning up a real Postgres.
 - **Redis**: testcontainers-node.
-- **Key Vault**: mock or use an actual dev vault scoped to CI SP.
+- **Key Vault**: mock or use an actual staging vault scoped to CI SP.
 
-Rationale: prior AEX incident — mocked tests passed but prod migration failed. Real-dependency testing catches contract mismatches.
+Rationale: mocks lie. Real-dependency tests catch contract mismatches that mocked tests pass through.
 
 ```ts
 // orders.integration.test.ts
@@ -143,4 +144,4 @@ Emit coverage reports in CI but don't gate merge on them — let reviewers see t
 
 - **Colocated with tests** for single-test fixtures.
 - **`tests/fixtures/`** for shared fixtures.
-- **Real-world fixtures** where possible — capture actual API responses as JSON rather than hand-crafting. Ref `oatis-rest-api` fixture-replay pattern.
+- **Real-world fixtures** where possible — capture actual API responses as JSON rather than hand-crafting. A fixture-replay helper that records once and replays in tests pays off quickly.

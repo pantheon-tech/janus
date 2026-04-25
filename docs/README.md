@@ -14,7 +14,7 @@
 
 ## Doc shapes
 
-Every file in `docs/` is one of **five shapes** (see [docs-shapes](./conventions/docs-shapes.md)):
+Every file in `docs/` is one of **six shapes** (see [docs-shapes](./conventions/docs-shapes.md)):
 
 | Shape | Where | Template |
 |---|---|---|
@@ -23,5 +23,6 @@ Every file in `docs/` is one of **five shapes** (see [docs-shapes](./conventions
 | ADR | `adr/` | [TEMPLATE](./adr/TEMPLATE.md) |
 | Plan | `plans/` | [TEMPLATE](./plans/TEMPLATE.md) |
 | Runbook | `runbooks/` | [TEMPLATE](./runbooks/TEMPLATE.md) |
+| Reference | `conventions/`, `architecture.md` | — |
 
 Free-form prose is rejected in review.
