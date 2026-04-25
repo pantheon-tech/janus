@@ -1,0 +1,16 @@
+{{=<% %>=}}
+{
+  "main": "dist/functions/*.js",
+  "scripts": {
+    "dev": "tsup --watch & func start",
+    "build": "tsup src/functions --format esm --out-dir dist/functions --clean",
+    "start": "func start"
+  },
+  "dependencies": {
+    "@azure/functions": "~4.14.0"
+  },
+  "devDependencies": {
+    "tsx": "~4.21.0",
+    "tsup": "~8.5.1"
+  }
+}

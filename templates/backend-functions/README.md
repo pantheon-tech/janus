@@ -1,59 +1,94 @@
 # backend-functions archetype
 
-Azure Functions v4 (Node 20) for sparse APIs, webhooks, event handlers.
+Azure Functions v4 (Node.js, isolated worker, Programming Model v4) HTTP backend.
+Ships with infra, deploy, and infra-preview GitHub Actions workflows.
 
-## Status
+## When to pick this archetype
 
-**Stub** — scaffold content TODO. First implementation priority.
+Choose `backend-functions` when you need:
 
-## Planned structure
+- A lightweight HTTP API, webhook handler, or event processor on Azure
+- Serverless/consumption-based billing (pay-per-execution)
+- No long-lived connections (use `backend-container-app` for WebSockets or SSE)
+- Rapid vertical scaling without managing containers or clusters
+
+## What it ships
+
+| File / directory | Purpose |
+|---|---|
+| `src/functions/health.ts` | Example HTTP trigger using `app.http()` |
+| `tests/health.test.ts` | Vitest unit test for the health handler |
+| `host.json` | Azure Functions runtime config (v2 schema, extension bundle 4.x) |
+| `local.settings.json.example` | Local dev settings template (gitignored after copy) |
+| `package.json` overlay | Adds `@azure/functions`, `tsup`, `main` glob, `build`/`dev`/`start` scripts |
+| `AGENTS.md` | AI-agent context: stack, commands, critical invariants |
+| `infra/` (from `_shared`) | Bicep + AVM composition — Function App module included |
+| `.github/workflows/deploy.yml` | OIDC-based staging + prod deploy |
+| `.github/workflows/infra-preview.yml` | What-if infra preview on PRs |
+
+## Promoted structure
 
 ```
 <project>/
 ├── src/
-│   ├── functions/              # handlers — one per HTTP function
-│   │   ├── orders-create.ts
-│   │   ├── orders-get.ts
-│   │   └── events-handler.ts
-│   ├── services/               # business logic
-│   ├── repositories/           # data access (Cosmos / Table / SQL)
-│   ├── schemas/                # zod schemas
-│   ├── lib/                    # config, logger, errors, auth, db client
-│   ├── domain/                 # pure domain types
-│   └── main.ts                 # optional bootstrap
+│   └── functions/              # one file per HTTP function (or logical group)
+│       └── health.ts           # exports healthHandler + calls app.http()
 ├── tests/
-│   ├── unit/                   # mock repos
-│   ├── integration/            # real DB (emulator)
-│   └── fixtures/
+│   └── health.test.ts          # import handler directly for unit tests
 ├── host.json
-├── local.settings.json          # gitignored
+├── local.settings.json         # gitignored — copied from .example
+├── local.settings.json.example
 ├── package.json
 ├── tsconfig.json
 ├── vitest.config.ts
-├── infra/                       # Bicep + AVM composition
+├── infra/
 │   ├── main.bicep
-│   ├── modules/
-│   └── scripts/
+│   └── modules/
 ├── .github/workflows/
 │   ├── ci.yml
-│   ├── deploy-staging.yml
-│   ├── deploy-prod.yml
+│   ├── deploy.yml
 │   └── infra-preview.yml
 ├── AGENTS.md
-├── CLAUDE.md
 └── README.md
 ```
 
-## Planned contents
+## Programming Model v4 primer
 
-- **`host.json`** — Functions runtime config (Node 20, Flex Consumption plan defaults).
-- **`src/functions/`** — one file per HTTP endpoint, using `app.http()` pattern.
-- **`src/lib/`** — config loader (zod-validated env), pino logger, AppError hierarchy, Cosmos/Table client singleton, MSAL token verify middleware.
-- **`infra/main.bicep`** — AVM-composed: managed identity → Log Analytics → App Insights → Key Vault → Storage (required for Functions) → Function App (Flex Consumption).
-- **`.github/workflows/deploy-{staging,prod}.yml`** — OIDC federated, `func azure functionapp publish` via CLI.
+v4 is the current (default) Node.js programming model for Azure Functions. Key points:
+
+- **No `function.json`** — bindings are declared in code via `app.http()`, `app.timer()`, etc.
+- **Entry point via `main`** — `package.json` `"main": "dist/functions/*.js"` tells the runtime
+  which compiled files to load. Always build before `func start`.
+- **Handler isolation** — export the handler function separately from the `app.http()` call so
+  Vitest can import and test it without triggering registration side effects.
+
+## Local dev prerequisites
+
+```bash
+npm install -g azure-functions-core-tools@4 --unsafe-perm true
+```
+
+Then:
+
+```bash
+cp local.settings.json.example local.settings.json
+# edit: set AzureWebJobsStorage = "UseDevelopmentStorage=true" or a real connection string
+pnpm build && pnpm start
+# or
+pnpm dev  # tsup --watch & func start (concurrent)
+```
+
+## Promotion path
+
+| From | To | Why |
+|---|---|---|
+| `generic-ts` | `backend-functions` | Project outgrows a library; needs an HTTP surface |
+| `backend-functions` | `backend-container-app` | Needs WebSockets, long-running processes, or custom runtimes |
 
 ## See also
 
-- `/home/skip/janus/docs/conventions/layering.md` — backend layering rules
-- `/home/skip/janus/docs/conventions/error-handling.md` — domain/infra error split
-- `/home/skip/janus/docs/conventions/logging.md` — pino + OTel setup
+- `docs/conventions/layering.md` — backend layering rules
+- `docs/conventions/error-handling.md` — domain/infra error split
+- `docs/conventions/logging.md` — pino + OTel setup
+- [Azure Functions Node.js developer guide](https://learn.microsoft.com/en-us/azure/azure-functions/functions-reference-node)
+- [Migrate to v4 programming model](https://learn.microsoft.com/en-us/azure/azure-functions/functions-node-upgrade-v4)
