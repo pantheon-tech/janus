@@ -239,6 +239,59 @@ output kvUri string = kv.outputs.uri
 
 Main file is ~50 lines; wrappers encapsulate the AVM parameters.
 
+## Wrapper example — resource names match azure-naming
+
+The `main.bicep` above shows module **deployment names** (`kv-deploy`, `acr-deploy`) — those are arbitrary identifiers Bicep uses to track sub-deployments. The actual Azure **resource name** is set inside the wrapper, and must match the pattern in [`azure-naming.md`](./azure-naming.md):
+
+```bicep
+// modules/our-keyvault.bicep
+@description('Our standard Key Vault with janus defaults')
+param workload string
+param env string
+param location string = resourceGroup().location
+param workspaceResourceId string
+param identityPrincipalId string
+
+var tags = {
+  workload: workload
+  env: env
+  managedBy: 'Bicep+AVM'
+}
+
+module kv 'br/public:avm/res/key-vault/vault:0.12.0' = {
+  name: 'kv-${workload}-${env}-deploy'   // ← module deployment name (arbitrary)
+  params: {
+    name: 'kv-${workload}-${env}'        // ← actual Azure resource name
+                                         //   matches azure-naming.md pattern
+    location: location
+    tags: tags
+    enableTelemetry: false
+    enableRbacAuthorization: true
+    networkAcls: {
+      defaultAction: env == 'prod' ? 'Deny' : 'Allow'
+      bypass: 'AzureServices'
+    }
+    diagnosticSettings: [{ workspaceResourceId: workspaceResourceId }]
+    roleAssignments: [{
+      principalId: identityPrincipalId
+      roleDefinitionIdOrName: 'Key Vault Secrets User'
+    }]
+  }
+}
+
+output uri string = kv.outputs.uri
+output resourceId string = kv.outputs.resourceId
+```
+
+Two distinct names per resource:
+
+| Name | Set by | Format |
+|---|---|---|
+| Module deployment name | Bicep module declaration | `<resource>-<workload>-<env>-deploy` (any unique string) |
+| Azure resource name | AVM `name` param inside the wrapper | Per `azure-naming.md` (e.g. `kv-myapp-prod`) |
+
+Reviewers verify the second one — only the resource name appears in the portal, RBAC scopes, and `az` commands.
+
 ## Deploy flow
 
 ```bash
