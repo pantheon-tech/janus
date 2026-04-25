@@ -19,25 +19,29 @@ Per-archetype scaffolds. The scaffold script composes these into a new project.
 
 - **`_shared/` is always applied first** (base layer).
 - **Per-archetype files overlay** on top of `_shared/`.
-- **Slot substitution** uses `{{snake_case}}` syntax in template filenames and contents.
+- **Slot substitution** uses `<%snake_case%>` syntax in `.tmpl` files (Mustache custom delimiters via `mo`).
 
 ## Slot variables
 
+Template files open with `{{=<% %>=}}` to switch Mustache's delimiter from `{{ }}` to `<% %>`.
+This is necessary because GitHub Actions workflow files contain `${{ github.expr }}` expressions
+that the default Mustache `{{ }}` delimiter would accidentally consume.
+
 | Slot | Example | Source |
 |---|---|---|
-| `{{workload}}` | `myapp` | scaffold prompt |
-| `{{description}}` | `"Trading platform API"` | scaffold prompt |
-| `{{archetype}}` | `backend-functions` | scaffold prompt |
-| `{{github_org}}` | (your GitHub org or username) | `git config user.name` or scaffold prompt |
-| `{{author}}` | (your full name) | `git config user.name` |
-| `{{author_email}}` | (your git email) | `git config user.email` |
-| `{{environments}}` | `staging,prod` | default |
-| `{{node_version}}` | `24` | default |
-| `{{license}}` | `MIT` | default |
-| `{{region}}` | `australiaeast` | default |
-| `{{template_version}}` | `v0.1.0` | auto from janus |
-| `{{year}}` | `2026` | auto |
-| `{{date}}` | `2026-04-25` | auto |
+| `<%workload%>` | `myapp` | scaffold prompt |
+| `<%description%>` | `"Trading platform API"` | scaffold prompt |
+| `<%archetype%>` | `backend-functions` | scaffold prompt |
+| `<%github_org%>` | (your GitHub org or username) | `git config user.name` or scaffold prompt |
+| `<%author%>` | (your full name) | `git config user.name` |
+| `<%author_email%>` | (your git email) | `git config user.email` |
+| `<%environments%>` | `staging,prod` | default |
+| `<%node_version%>` | `24` | default |
+| `<%license%>` | `MIT` | default |
+| `<%region%>` | `australiaeast` | default |
+| `<%template_version%>` | `v0.1.0` | auto from janus |
+| `<%year%>` | `2026` | auto |
+| `<%date%>` | `2026-04-25` | auto |
 
 ## Adding a new archetype
 

@@ -17,7 +17,7 @@ Using `AGENTS.md` as primary means the same project context steers any of these 
 
 ## AGENTS.md shape
 
-Seven sections. Strict.
+Eight sections. Strict.
 
 ```markdown
 # <project-name>
@@ -30,6 +30,9 @@ Seven sections. Strict.
 
 ## Commands
 <bash block with canonical commands>
+
+## Branching
+<branch names and what each deploys to>
 
 ## Structure
 <file tree or bullet list>
@@ -46,6 +49,8 @@ Seven sections. Strict.
 ---
 *Last reviewed: YYYY-MM-DD*
 ```
+
+The `Branching` section is section 4 (between Commands and Structure). It is genuinely orthogonal to Commands — Commands describe *what to run*, Branching describes *where work lands*. Folding it into Commands would mix operational procedures with workflow policy in a single section.
 
 ## Length
 
