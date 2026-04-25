@@ -1,4 +1,7 @@
 version: 2
+# Note: Dependabot does not support the 'bicep-registry' ecosystem (that is
+# a Renovate-only feature). AVM module version bumps in templates/_shared/infra/
+# must be done manually — see docs/conventions/avm-versions.md for the procedure.
 updates:
   # janus's own JS/TS deps (biome, lefthook, commitlint).
   - package-ecosystem: npm

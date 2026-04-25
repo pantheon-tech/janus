@@ -113,15 +113,10 @@ version in a top-level comment too — keep the two in sync.
 
 ### Dependabot config
 
-```yaml
-# .github/dependabot.yml — bicep ecosystem support
-version: 2
-updates:
-  - package-ecosystem: 'bicep-registry'
-    directory: '/infra'
-    schedule:
-      interval: 'weekly'
-```
+GitHub Dependabot does **not** support `package-ecosystem: 'bicep-registry'`
+(that is a Renovate-only feature). AVM module version bumps are therefore
+**manual** — see the procedure in
+[`./avm-versions.md`](./avm-versions.md#avm-version-bumps-are-manual).
 
 ## Escape hatches
 
