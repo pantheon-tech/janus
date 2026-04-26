@@ -17,7 +17,9 @@ Project-only plugins (e.g. `playwright`, `frontend-design`, `pyright-lsp`) are e
 
 ## Skills (user-scope)
 
-`activity-report`, `bugfix`, `spawn-fleet`, `sprint`, `workflow-fix`. Project skills override on collision.
+`activity-report`, `bugfix`, `new-project`, `spawn-fleet`, `sprint`, `workflow-fix`. Project skills override on collision.
+
+`new-project` wraps `npx @pantheon-tech/janus` to scaffold a new project — invoke when starting fresh work. It detects whether user-scope is bootstrapped and runs the one-off install if needed.
 
 Project-scope skills shipped by janus (see `templates/_shared/.claude/skills/` in the janus repo): `fix`, `git-clean`, `reconcile`, `resolve-issues`, `triage-issue`.
 

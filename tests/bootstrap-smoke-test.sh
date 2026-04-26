@@ -65,7 +65,7 @@ for h in stop-memory-check.sh ts-check-on-edit.sh; do
 done
 
 # Skills
-for s in bugfix sprint spawn-fleet activity-report workflow-fix; do
+for s in bugfix sprint spawn-fleet activity-report workflow-fix new-project; do
   assert_file "$TEST_HOME/.claude/skills/$s/SKILL.md"
 done
 # Skill scripts that need +x
