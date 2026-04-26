@@ -59,7 +59,7 @@ for h in stop-memory-check.sh ts-check-on-edit.sh; do
 done
 
 # Skills (just check the dirs exist)
-for s in bugfix sprint spawn-fleet activity-report workflow-fix; do
+for s in bugfix sprint spawn-fleet activity-report workflow-fix new-project; do
   if [ ! -f "${TARGET_DIR}/skills/${s}/SKILL.md" ]; then
     fail "skill missing: ${s}"
   else
