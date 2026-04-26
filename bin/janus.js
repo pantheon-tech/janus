@@ -79,7 +79,9 @@ if (cmd === 'update') {
 function runScript(script, scriptArgs) {
   if (!existsSync(script)) {
     console.error(`janus: script not found: ${script}`);
-    console.error('       (the package may be missing files; reinstall with `npx @pantheon-tech/janus@latest`)');
+    console.error(
+      '       (the package may be missing files; reinstall with `npx @pantheon-tech/janus@latest`)',
+    );
     process.exit(1);
   }
   const result = spawnSync('bash', [script, ...scriptArgs], { stdio: 'inherit' });
