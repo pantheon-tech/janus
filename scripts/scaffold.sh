@@ -37,7 +37,7 @@ done
 # Warn the user once with a clear remediation pointer.
 if [ -x "${JANUS_ROOT}/scripts/check-user-scope.sh" ]; then
   if ! bash "${JANUS_ROOT}/scripts/check-user-scope.sh" --quiet 2>/dev/null; then
-    echo "⚠ User-scope (~/.claude/) looks incomplete. Run \`npx @skipnz/janus bootstrap\`"
+    echo "⚠ User-scope (~/.claude/) looks incomplete. Run \`npx @pantheon-tech/janus bootstrap\`"
     echo "  to install hooks, skills, rules, and baseline settings before continuing."
     echo "  (Scaffolding will proceed; user-scope is an enhancement, not a blocker.)"
     echo

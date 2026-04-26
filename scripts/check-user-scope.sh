@@ -88,6 +88,6 @@ if [ "$ISSUES" -eq 0 ]; then
   note "User-scope OK."
   exit 0
 else
-  note "${ISSUES} issue(s) found. Run: npx @skipnz/janus bootstrap"
+  note "${ISSUES} issue(s) found. Run: npx @pantheon-tech/janus bootstrap"
   exit 1
 fi

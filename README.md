@@ -13,7 +13,7 @@ Portable project starter kit for TypeScript + Azure solo-dev work. Encodes a del
 - **`templates/`** — per-archetype scaffolds (backend-functions, backend-container-app, frontend-vite-react, generic-ts, types-package, mcp-server, monorepo-root).
 - **`templates/_shared/`** — files common to all archetypes (biome, tsconfig base, editorconfig, GitHub workflows, hooks, skills, etc.).
 - **`user-scope/`** — Claude Code user-scope kit: hooks, skills, rules, baseline `~/.claude/settings.json` partial. Installed by `bootstrap`.
-- **`bin/janus.js`** — CLI dispatcher (used via `npx @skipnz/janus`).
+- **`bin/janus.js`** — CLI dispatcher (used via `npx @pantheon-tech/janus`).
 - **`scripts/scaffold.sh`** — interactive scaffolder.
 - **`scripts/setup-user-scope.sh`** — installs `user-scope/` into `~/.claude/`.
 
@@ -29,7 +29,7 @@ Every new project made from janus inherits a baseline. When it needs to diverge,
 
 ```bash
 # Install Claude Code user-scope (~/.claude/) hooks, skills, rules, baseline settings
-npx @skipnz/janus bootstrap
+npx @pantheon-tech/janus bootstrap
 ```
 
 This installs to `~/.claude/`:
@@ -39,12 +39,12 @@ This installs to `~/.claude/`:
 - Baseline `settings.json` (jq-merged with any existing one — your edits are preserved)
 - `CLAUDE.md` (overview of what the user-scope kit provides)
 
-Re-run any time with `npx @skipnz/janus bootstrap` (idempotent) or `--update`/`--force`/`--diff`/`--dry-run` for finer control.
+Re-run any time with `npx @pantheon-tech/janus bootstrap` (idempotent) or `--update`/`--force`/`--diff`/`--dry-run` for finer control.
 
 ### Scaffold a new project
 
 ```bash
-npx @skipnz/janus scaffold
+npx @pantheon-tech/janus scaffold
 ```
 
 Prompts for workload, archetype, GitHub org, etc. Renders a complete project tree under `~/git/<workload>/` (or path of your choice) with both `staging` and `main` branches initialized.
@@ -52,7 +52,7 @@ Prompts for workload, archetype, GitHub org, etc. Renders a complete project tre
 ### Verify user-scope is set up
 
 ```bash
-npx @skipnz/janus check
+npx @pantheon-tech/janus check
 ```
 
 Reports any missing hooks/skills/rules and points at the bootstrap command if needed.
@@ -61,11 +61,11 @@ Reports any missing hooks/skills/rules and points at the bootstrap command if ne
 
 | Command | Purpose |
 |---|---|
-| `npx @skipnz/janus bootstrap` | Install user-scope to `~/.claude/` |
-| `npx @skipnz/janus scaffold` | Create a new project from janus templates |
-| `npx @skipnz/janus check` | Verify `~/.claude/` has the expected user-scope kit |
-| `npx @skipnz/janus update` | Alias for `bootstrap --update` |
-| `npx @skipnz/janus help` | Show usage |
+| `npx @pantheon-tech/janus bootstrap` | Install user-scope to `~/.claude/` |
+| `npx @pantheon-tech/janus scaffold` | Create a new project from janus templates |
+| `npx @pantheon-tech/janus check` | Verify `~/.claude/` has the expected user-scope kit |
+| `npx @pantheon-tech/janus update` | Alias for `bootstrap --update` |
+| `npx @pantheon-tech/janus help` | Show usage |
 
 ## Versioning
 

@@ -34,4 +34,4 @@ Project-scope skills shipped by janus (see `templates/_shared/.claude/skills/` i
 
 ## Updating
 
-To pull in upstream janus updates: `npx @skipnz/janus bootstrap --update`. Your local edits to skills/rules/CLAUDE.md are preserved by default; pass `--force` to overwrite.
+To pull in upstream janus updates: `npx @pantheon-tech/janus bootstrap --update`. Your local edits to skills/rules/CLAUDE.md are preserved by default; pass `--force` to overwrite.

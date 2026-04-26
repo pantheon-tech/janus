@@ -10,7 +10,7 @@
  *   help        show this message
  *
  * Usage:
- *   npx @skipnz/janus <subcommand> [args...]
+ *   npx @pantheon-tech/janus <subcommand> [args...]
  *   janus <subcommand> [args...]   (when installed globally or via npm link)
  *
  * The CLI is a thin spawn wrapper. All real work lives in scripts/*.sh so
@@ -50,9 +50,9 @@ function printHelp() {
   console.log(`  ${'update'.padEnd(10)} Alias for \`bootstrap --update\``);
   console.log(`  ${'help'.padEnd(10)} Show this message`);
   console.log('\nExamples:');
-  console.log('  npx @skipnz/janus bootstrap');
-  console.log('  npx @skipnz/janus scaffold');
-  console.log('  npx @skipnz/janus check');
+  console.log('  npx @pantheon-tech/janus bootstrap');
+  console.log('  npx @pantheon-tech/janus scaffold');
+  console.log('  npx @pantheon-tech/janus check');
   console.log('\nFor subcommand-specific help:');
   console.log('  janus <command> --help');
 }
@@ -79,7 +79,7 @@ if (cmd === 'update') {
 function runScript(script, scriptArgs) {
   if (!existsSync(script)) {
     console.error(`janus: script not found: ${script}`);
-    console.error('       (the package may be missing files; reinstall with `npx @skipnz/janus@latest`)');
+    console.error('       (the package may be missing files; reinstall with `npx @pantheon-tech/janus@latest`)');
     process.exit(1);
   }
   const result = spawnSync('bash', [script, ...scriptArgs], { stdio: 'inherit' });

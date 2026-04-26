@@ -93,7 +93,7 @@ jobs:
       - name: Pack and inspect tarball
         run: |
           npm pack --silent
-          tar tzf skipnz-janus-*.tgz | grep -E '^package/(bin|scripts|templates|user-scope)' | head -20
+          tar tzf pantheon-tech-janus-*.tgz | grep -E '^package/(bin|scripts|templates|user-scope)' | head -20
           # Required entries
           for required in \
             package/bin/janus.js \
@@ -106,7 +106,7 @@ jobs:
             package/user-scope/rules/fetch-before-work.md \
             package/user-scope/CLAUDE.md \
             package/user-scope/settings.json.partial; do
-            if ! tar tzf skipnz-janus-*.tgz | grep -q "^${required}$"; then
+            if ! tar tzf pantheon-tech-janus-*.tgz | grep -q "^${required}$"; then
               echo "FAIL: missing from tarball: $required"
               exit 1
             fi

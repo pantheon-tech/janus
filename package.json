@@ -1,5 +1,5 @@
 {
-  "name": "@skipnz/janus",
+  "name": "@pantheon-tech/janus",
   "version": "0.1.0",
   "description": "Portable project starter kit for TypeScript + Azure solo-dev work — scaffolds projects and bootstraps Claude Code user-scope",
   "type": "module",
@@ -33,11 +33,11 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/skipnz/janus.git"
+    "url": "git+https://github.com/pantheon-tech/janus.git"
   },
-  "homepage": "https://github.com/skipnz/janus#readme",
+  "homepage": "https://github.com/pantheon-tech/janus#readme",
   "bugs": {
-    "url": "https://github.com/skipnz/janus/issues"
+    "url": "https://github.com/pantheon-tech/janus/issues"
   },
   "keywords": [
     "scaffold",

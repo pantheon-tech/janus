@@ -2,7 +2,7 @@
 title: AVM Module Versions
 type: reference
 last_reviewed: 2026-04-25
-owners: [@skipnz]
+owners: []  # add owners for this project
 ---
 
 # AVM Module Versions

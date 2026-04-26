@@ -59,5 +59,5 @@ architectural decisions. It has no runtime. It is consumed in two modes:
 ## Distribution
 
 - Local: `/home/skip/janus/` cloned once.
-- Remote: `github.com/skipnz/janus`.
+- Remote: `github.com/pantheon-tech/janus`.
 - Consumed by: `scripts/scaffold.sh` invoked manually; future Claude Code skill may wrap it.

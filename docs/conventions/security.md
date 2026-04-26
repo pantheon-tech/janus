@@ -2,7 +2,7 @@
 title: Security
 type: reference
 last_reviewed: 2026-04-24
-owners: [@skipnz]
+owners: []  # add owners for this project
 ---
 
 # Security

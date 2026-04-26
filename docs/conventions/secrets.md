@@ -2,7 +2,7 @@
 title: Secret Management
 type: reference
 last_reviewed: 2026-04-24
-owners: [@skipnz]
+owners: []  # add owners for this project
 ---
 
 # Secret Management
@@ -56,7 +56,7 @@ Each environment service principal needs federated credentials with these `subje
 | Deploy from `main` → prod | `repo:<org>/<repo>:environment:prod` |
 | What-if preview on PR | `repo:<org>/<repo>:pull_request` |
 
-`<org>/<repo>` is the GitHub `owner/name` pair (e.g. `skipnz/janus`). `environment:<name>` matches the GitHub Environment exactly — if the workflow uses `environment: staging`, the subject must say `environment:staging` (lowercase). The `pull_request` subject grants no environment access; it must be paired with read-only-by-default permissions in the calling workflow.
+`<org>/<repo>` is the GitHub `owner/name` pair (e.g. `your-org/your-repo`). `environment:<name>` matches the GitHub Environment exactly — if the workflow uses `environment: staging`, the subject must say `environment:staging` (lowercase). The `pull_request` subject grants no environment access; it must be paired with read-only-by-default permissions in the calling workflow.
 
 ## Layer 3 — Developer-local
 

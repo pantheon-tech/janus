@@ -2,7 +2,7 @@
 title: Logging & Observability
 type: reference
 last_reviewed: 2026-04-25
-owners: [@skipnz]
+owners: []  # add owners for this project
 ---
 
 # Logging & Observability
