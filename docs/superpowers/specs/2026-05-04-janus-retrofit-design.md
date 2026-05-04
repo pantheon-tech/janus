@@ -1,6 +1,6 @@
 # janus retrofit — design
 
-**Status:** draft (rev 6 — addresses code-review iterations 1 + 2 + 3 + 4 + 5)
+**Status:** draft (rev 7 — addresses code-review iterations 1 + 2 + 3 + 4 + 5 + 6)
 **Date:** 2026-05-04
 **Author:** Daniel (with Claude)
 **Scope:** v0.1 of `janus diagnose` and `janus retrofit` subcommands
@@ -69,7 +69,7 @@ The split makes each module independently testable.
 3. If `.janus.json` exists, it parses and validates against `marker.schema.json`; `schema_version` is recognised.
 4. Required tools available: `git`, `jq`, `node`, plus `mo` (vendored).
 5. **No git submodules** (`git submodule status` empty).
-6. **No symlinks** within paths the chosen archetype's overlay would touch (`find <target_paths> -type l`). **Timing note:** computing the target-path set requires running the analyzer + plan-builder's overlay-tree computation first; pre-flight #6 therefore runs *after* those analyses produce the in-memory overlay tree (per §3 the overlay tree is in-memory and not gated by pre-flight). Implementation order: parsed args → analyzer → slot/plugin resolution → overlay-tree computation → checks #6 and #7 → plan emission.
+6. **No symlinks** within paths the chosen archetype's overlay would touch (`find <target_paths> -type l`). Computing the target-path set requires the rendered overlay tree, so this check runs after overlay-tree computation per the pre-flight ordering rule below.
 7. **No case-insensitive collisions** between existing files and janus baseline targets.
 8. If `--archetype monorepo-root`: search ancestors of `pwd` for a `pnpm-workspace.yaml`. If one is found AND its directory differs from `git rev-parse --show-toplevel`, refuse with `INVOKED_FROM_WORKSPACE_MEMBER`: user has invoked diagnose from inside a workspace member, not the root. (If no `pnpm-workspace.yaml` exists anywhere, the check is a no-op — diagnose proceeds and the resulting plan creates the workspace from scratch.)
 
@@ -83,6 +83,8 @@ The split makes each module independently testable.
 14. The **target branch** (default `janus/retrofit`, overridable with `--branch <name>`) does not exist locally or on `origin`. The remote check uses `git ls-remote --heads origin <branch>` (network call). If `origin` is unreachable (offline / auth failure), exit with `REMOTE_UNREACHABLE` — the user can re-run with `--no-remote-check` (§11) to fall back to local-only verification, accepting the risk of a remote collision discovered at push time. If default is taken and `--branch` is not supplied, search `janus/retrofit-2` … `janus/retrofit-99` for the first free name; **print the suggested name and exit (soft failure with remediation)** — the explicit-opt-in via `--branch <suggested-name>` keeps the destructive operation deliberately under user control. **Under `--no-remote-check`, the suggestion search is local-only; the user accepts the risk that the suggested name may collide on push.** If all 99 are taken, exit with `BRANCH_SUGGESTION_EXHAUSTED`.
 15. Required tools for execution: as in diagnose, plus `pnpm`.
 16. **Not invoked from a linked git worktree.** The `displace-husky` step's `git config --unset core.hooksPath` writes to the *shared* main `.git/config` from a normal checkout; from a linked worktree it may fail to clear inherited values, leaving the main checkout's husky config untouched. Check via `[ "$(git rev-parse --git-dir)" = "$(git rev-parse --git-common-dir)" ]`; if not equal, abort with `INVOKED_FROM_WORKTREE` and instruct the user to run from the main checkout.
+
+**Pre-flight ordering:** checks run in numeric order #1 → #16, except #6 and #7 are deferred until after the analyzer + slot/plugin resolver + overlay-tree computation produce the rendered tree (since computing target paths requires that tree). First failure aborts and emits its specific error code; subsequent checks are not run. This makes test assertions deterministic — for a fixture violating multiple checks, the test asserts the lowest-numbered violator's error code.
 
 Any failure aborts with a specific error message and a suggested remediation. None of the pre-flight checks modify state.
 
@@ -218,17 +220,17 @@ Algorithm (matches scaffold.sh lines 230–325):
    - Otherwise copy verbatim.
    - Capture file mode from source (`stat -c '%a'` or equivalent). Hook scripts under `_shared/.claude/hooks/` are mode `0755`; everything else is `0644`. (scaffold.sh lines 431–433 chmod +x the hooks post-write; we encode the mode in the overlay tree so the executor restores it directly.)
    - Add to tree at the resulting path.
-2. Walk `templates/<archetype>/`. For each file:
-   - Skip `.exclude`, `slots.json`, and any other `meta` files documented in the archetype manifest.
-   - **`package.json.tmpl` is special:** render with `mo`, then jq deep-merge over the shared `package.json` already in the tree using `jq -s '.[0] * .[1]'`. **Note: jq's `*` operator merges objects recursively but overwrites scalars and arrays at leaves.** This means user-side merging (in step 4 below) will *intentionally clobber* user values for any key that janus's templates also set — see §6.5.
-   - **`.env.example` is special:** append to shared file (if shared has one), don't replace.
-   - **`.gitignore` is special** (retrofit-only divergence from scaffold.sh, which writes a fresh repo): if the user's `.gitignore` exists, do *not* overwrite. Instead emit a `gitignore_merge` op (see §7) that appends janus's lines inside a delimited block:
+   - **`.gitignore` is special** (the only `.gitignore` in any janus template is `_shared/.gitignore` — there is none in any archetype, so this rule lives at the `_shared` walk, not the archetype walk): rather than adding a `write_file` op to the overlay tree, plan-builder defers the decision: if the user's repo has an existing `.gitignore`, emit a `gitignore_merge` op (see §7) that appends janus's lines inside a delimited block:
      ```
      # --- janus baseline (managed by janus retrofit; do not edit) ---
      <janus's lines>
      # --- end janus baseline ---
      ```
-     If the block already exists from a prior retrofit, replace its body in place (idempotent). If absent, append at end of file (with one blank line separator). User's pre-existing ignores are preserved verbatim. Without this special case, retrofit would silently strip user-defined ignores and the next commit would start tracking previously-ignored files — a far worse outcome than `MODULE_TYPE_CHANGE`.
+     If the block already exists from a prior retrofit, replace its body in place (idempotent). If absent, append at end of file (with one blank line separator). User's pre-existing ignores are preserved verbatim. If the user has no `.gitignore`, fall back to a plain `write_file` op carrying the full janus content. Without this special case, retrofit would silently strip user-defined ignores and the next commit would start tracking previously-ignored files — a far worse outcome than `MODULE_TYPE_CHANGE`.
+2. Walk `templates/<archetype>/`. For each file:
+   - Skip `.exclude`, `slots.json`, and any other `meta` files documented in the archetype manifest.
+   - **`package.json.tmpl` is special:** render with `mo`, then jq deep-merge over the shared `package.json` already in the tree using `jq -s '.[0] * .[1]'`. **Note: jq's `*` operator merges objects recursively but overwrites scalars and arrays at leaves.** This means user-side merging (in step 4 below) will *intentionally clobber* user values for any key that janus's templates also set — see §6.5.
+   - **`.env.example` is special:** append to shared file (if shared has one), don't replace.
    - Otherwise: render-or-copy and **overwrite** any same-path entry from step 1 (per AGENTS.md: archetype takes precedence on collision).
 3. If the archetype excludes `infra/`, strip `deploy:staging` and `deploy:prod` from `package.json:scripts` (matches scaffold.sh line 314).
 4. **User-side `package.json` merge for retrofit** (this step is retrofit-specific; scaffold.sh has no user-side input): if the user's repo has an existing `package.json`, jq-deep-merge `{user_pkg} * {janus_rendered_pkg}` → `final_pkg`. Same merge operator (`*`); janus wins on key collisions. The `final_pkg` becomes the overlay-tree content for `package.json`. If the repo has no `package.json`, use `janus_rendered_pkg` directly.
@@ -266,16 +268,14 @@ Steps are grouped by category. **Within a category, ordering is alphabetical by 
 
    Other `displace-*` steps are conventional `delete_file` / `json_remove` sequences with no `.git/`-side cleanup needed.
 2. `set-package-manager` — one step. Sets `package.json:packageManager`, deletes non-pnpm lockfiles.
-3. `apply-shared-overlay` — **one step per top-level group** (categorization rule = top-level path under `_shared/` after rendering). **The `_shared/.claude/**` subtree is explicitly excluded from the walker for step 3 (and step 4) — it is owned exclusively by step 5 (`merge-claude-kit`).** Without this exclusion a naive walker would create a `.claude` group here and double-write everything in step 5.
-   - `dotfiles` (`.editorconfig`, `.gitattributes`, `.gitignore`, `.nvmrc`, `.node-version`, `.env.example`)
-   - `root-configs` (`biome.jsonc`, `lefthook.yml`, `commitlint.config.js`, `tsconfig.base.json`, `tsconfig.json`, `vitest.config.ts`)
-   - `root-docs` (`AGENTS.md`, `CLAUDE.md`, `README.md`, `LICENSE`, `SECURITY.md`, `CODEOWNERS`)
-   - `package-json` (the merged `package.json` from §6 step 4)
+3. `apply-shared-overlay` — **one step per top-level group**. The categorization rule is **data-driven** (not hardcoded): walk the rendered overlay tree, and for each entry the group is the entry's first path segment. Files at the repo root (no first segment that is a directory) are grouped under the synthetic name `root`. **The `_shared/.claude/**` subtree is explicitly excluded from the walker for step 3 (and step 4) — it is owned exclusively by step 5 (`merge-claude-kit`).** Without this exclusion a naive walker would create a `.claude` group here and double-write everything in step 5. The list below is **illustrative for the present-day `_shared/` tree, not normative** — future janus additions slot in automatically:
+   - `root` — files with no directory prefix, partitioned for review-friendliness into three commits via stable id suffix (so alphabetical step ordering still works): `root-dotfiles` (`.editorconfig`, `.gitattributes`, `.gitignore`, `.nvmrc`, `.node-version`, `.env.example`), `root-configs` (`biome.jsonc`, `lefthook.yml`, `commitlint.config.js`, `tsconfig.base.json`, `tsconfig.json`, `vitest.config.ts`, `package.json`), `root-docs` (`AGENTS.md`, `CLAUDE.md`, `README.md`, `LICENSE`, `SECURITY.md`, `CODEOWNERS`). The split is plan-builder logic over the `root` group, not a separate categorization rule.
    - `infra` (everything under `infra/` if not excluded by archetype)
-   - `github` (everything under `.github/` — workflows, dependabot, issue templates, PR templates)
-   - `docs-conventions` (`docs/conventions/*`)
-   - `src-skeleton` (`src/*` if not excluded)
-   - `tests-skeleton` (`tests/*` if not excluded)
+   - `.github` (everything under `.github/` — workflows, dependabot, issue templates, PR templates, prompts/)
+   - `docs` (everything under `docs/` — `conventions/`, `architecture.md`, `adr/`, `plans/`, `runbooks/`)
+   - `src` (everything under `src/` if not excluded)
+   - `tests` (everything under `tests/` if not excluded)
+   - Future top-level dirs added to `_shared/` produce new groups automatically.
 4. `apply-archetype-overlay` — one step per file group within the archetype, organized by the same top-level-path rule.
 5. `merge-claude-kit`:
    - `claude-settings-merge` — additive merge of `settings.json` (rules in §8).
@@ -297,6 +297,10 @@ Steps are grouped by category. **Within a category, ordering is alphabetical by 
 The `apply-shared-overlay/github` step ships janus's named workflow files (e.g., `.github/workflows/ci.yml.tmpl`, `deploy.yml.tmpl`, `infra-preview.yml.tmpl`, `claude-autofix.yml.tmpl`). On collision (user has a same-named file), the overlay-with-replace policy applies: janus wins, `WARN_OVERWRITE_USER_KIT` is emitted.
 
 **`WORKFLOW_REFERENCES_DISPLACED_TOOL` warnings** apply to **user-authored, non-janus-named** workflows that reference displaced tools (e.g., the user has `.github/workflows/qa.yml` running `npm ci && eslint`). v0.1 does not modify these — only warns. The user fixes by hand post-retrofit.
+
+### 6.7.5 Out-of-scope ignore mechanisms
+
+janus does not read or modify `.git/info/exclude` (per-checkout local ignores). Users who use it should be aware: retrofitted files matched by `.git/info/exclude` will appear ignored to git but visible to the executor's overlay tree, with no special handling. v0.1 makes no attempt to merge into or warn about it.
 
 ### 6.8 Idempotency on re-run — per-file omission rule
 
@@ -392,7 +396,7 @@ Validated against `src/retrofit/schema/plan.schema.json` at retrofit pre-flight 
 | `json_remove_matching`   | Remove keys under `pointer` whose **value matches `value_regex`**, OR (alternative form) keys whose **name matches `key_regex`**. Op accepts exactly one of `value_regex` / `key_regex`. **Regex flavor: ECMA (JavaScript `RegExp`)**, case-sensitive, not auto-anchored — the implementer wraps with `^...$` if anchoring is intended. Specified to remove the "which regex dialect" decision from the implementer.|
 | `json_merge`             | Deep-merge object into pointer location. **Additive only**: object recursion, no scalar overwrite, no array overwrite. (This op is distinct from the jq `*` semantics used internally by plan-builder for `package.json.tmpl` merging — that's not exposed as an op.) |
 | `claude_settings_merge`  | Specialized: per-field merge of `.claude/settings.json` (see §8). Carries `additions: { permissions, hooks, enabledPlugins, scalars }`. |
-| `gitignore_merge`        | Specialized: append-or-replace janus's lines inside a delimited block in `.gitignore`. Required: `lines: string[]`. Block markers fixed: `# --- janus baseline (managed by janus retrofit; do not edit) ---` / `# --- end janus baseline ---`. Idempotent: replaces block body if markers found, otherwise appends with one blank line separator. Preserves all user content outside the block. Used only when target `.gitignore` already exists; if absent, plan-builder emits a plain `write_file` op instead. |
+| `gitignore_merge`        | Specialized: append-or-replace janus's lines inside a delimited block in `.gitignore`. Required: `lines: string[]` (order is fixed by plan-builder — same order as appears in janus's `_shared/.gitignore` source — and is part of the determinism contract). Optional: `pre_state_hash` (sha256 of the user's existing `.gitignore` at diagnose time; executor verifies and aborts with `PRE_STATE_HASH_MISMATCH` on drift, mirroring `write_file`). Block markers fixed: `# --- janus baseline (managed by janus retrofit; do not edit) ---` / `# --- end janus baseline ---`. Idempotent: replaces block body if both markers found in order, otherwise appends with one blank line separator. **Malformed-marker handling:** if exactly one of the two markers is present, OR markers appear in reverse order, OR markers appear more than once, abort step with `GITIGNORE_BLOCK_MALFORMED` and instruct the user to clean up by hand. Preserves all user content outside the block. Used only when target `.gitignore` already exists; if absent, plan-builder emits a plain `write_file` op instead. |
 | `shell`                  | Run a whitelisted command. **Whitelist (closed, with per-entry behavior flags):** (a) `pnpm install` — must succeed; (b) `pnpm dedupe` — must succeed; (c) `git config --unset core.hooksPath` — exit code ignored (no-op if key absent); (d) `find .git/hooks -type f -not -name "*.sample" -delete` — exit code ignored (no-op if dir empty). The four entries above are the **only** strings the executor will accept (no argv variations). **`commit_paths` field is required at the step level** — executor stages only those paths after the command runs; any other modified files trigger `EXTRANEOUS_FILE_MODIFICATIONS`. (`git config` and `find` operate on `.git/`, which git itself doesn't track, so they produce no `commit_paths`.) Executor refuses any `shell` op whose `command` is not on the whitelist, even if the JSON parses. |
 
 **Step-level fields:**
@@ -419,6 +423,7 @@ The canonical "what janus ships in settings.json" is `SETTINGS_BASE` in `scripts
 **`CLAUDE.md`** — never merged.
 
 - If existing `CLAUDE.md` is present: rename to `CLAUDE.pre-janus.md`, write janus's template (rendered via `mo`), then insert the literal line `@CLAUDE.pre-janus.md\n` at byte offset corresponding to immediately-after the first `@AGENTS.md\n` line. The resulting head of `CLAUDE.md` is exactly: `@AGENTS.md\n@CLAUDE.pre-janus.md\n\n## Claude-specific\n…`. (Two `@`-imports stacked with no blank line between, then the existing template body resumes after one blank line.) User's prose still loads, AGENTS conventions load first.
+- **Plan-builder safeguard:** if the rendered janus `CLAUDE.md` does not begin with the literal bytes `@AGENTS.md\n`, plan-builder aborts with `CLAUDE_TEMPLATE_UNEXPECTED_HEAD`. Cheap insurance against silent breakage if a future janus version reorganizes its template head.
 - **Why `CLAUDE.pre-janus.md`:** `CLAUDE.local.md` is conventionally git-ignored by Claude Code; snapshot is meant to *preserve* user intent in version control.
 - If `CLAUDE.pre-janus.md` already exists at retrofit time: abort step with `CLAUDE_PRE_JANUS_EXISTS`; user must rename or delete first.
 - Plan-builder writes the snapshot target path as `claude_md_snapshot.target_path` in the step JSON for auditability.
@@ -530,12 +535,15 @@ Warnings: 5
   - PKG_FIELDS_OVERWRITTEN: package.json:scripts.test ('jest' → 'vitest run')
   - WARN_OVERWRITE_USER_KIT: .claude/skills/foo.md (sha256:jkl3def…)
 
-Files to be overwritten (5):
-  package.json                 (sha256:abc1234… → merged content)
-  .claude/settings.json        (sha256:def5678… → additive merge)
+Files to be overwritten (3):
   README.md                    (sha256:ghi9abc… → janus template)
   .claude/skills/foo.md        (sha256:jkl3def… → janus version)
   .claude/hooks/session.sh     (sha256:mno6ghi… → janus version)
+
+Files to be merged (3, additive — user content preserved):
+  package.json                 (sha256:abc1234… → jq deep-merge over user)
+  .claude/settings.json        (sha256:def5678… → claude_settings_merge per §8 rules)
+  .gitignore                   (sha256:pqr0xyz… → janus baseline block appended/replaced)
 
 Plan written to .janus-retrofit.json
 Next: review the plan, then run `janus retrofit --plan .janus-retrofit.json`
