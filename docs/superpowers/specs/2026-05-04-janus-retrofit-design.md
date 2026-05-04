@@ -1,6 +1,6 @@
 # janus retrofit — design
 
-**Status:** draft
+**Status:** draft (rev 2 — addresses code-review iteration 1)
 **Date:** 2026-05-04
 **Author:** Daniel (with Claude)
 **Scope:** v0.1 of `janus diagnose` and `janus retrofit` subcommands
@@ -16,95 +16,96 @@ The user has several pre-janus repos and wants a tool that produces a determinis
 **Goals (v0.1):**
 
 - `janus diagnose` — read-only analysis. Produces a JSON plan describing every file change needed to bring the repo to the janus baseline.
-- `janus retrofit --plan <file>` — executes an approved plan. Lands changes as a series of logical commits on a `janus/retrofit` branch.
+- `janus retrofit --plan <file>` — executes an approved plan. Lands changes as a series of logical commits on a `janus/retrofit` branch (configurable).
 - Cover all six archetypes: `generic-ts`, `backend-functions`, `backend-container-app`, `frontend-vite-react`, `mcp-server`, `monorepo-root`.
 - Strip displaced tools (eslint, prettier, husky, jest, npm/yarn lockfiles); install replacements (biome, lefthook, vitest, pnpm).
-- Additively merge `.claude/settings.json`. Preserve existing `CLAUDE.md` as `CLAUDE.local.md`. Overlay janus's skills/agents/commands.
+- Additively merge `.claude/settings.json`. Snapshot existing `CLAUDE.md` to `CLAUDE.pre-janus.md`. Overlay janus's skills/agents/commands.
 - Drop a `.janus.json` marker so subsequent runs become "update" operations.
-- Idempotent: re-running diagnose against an already-retrofitted repo produces an empty (or near-empty) plan.
+- Idempotent: re-running diagnose against an already-retrofitted repo produces a plan with zero or only-update steps.
+- Deterministic: two diagnose runs with identical inputs produce byte-identical plan JSON.
 
 **Non-goals (v0.1):**
 
-- Detecting archetype automatically. User must pass `--archetype <name>`.
-- Source-code refactoring (moving files into `src/functions/`, renaming exports, etc.). Layout changes are out of scope; only configuration, tooling, hooks, docs, and the Claude kit are touched.
-- Migrating tools outside the known displaced-tools list (e.g., a repo using rome, dprint, lint-staged, pre-commit). These are flagged in the plan with a warning; user resolves manually.
+- Detecting archetype automatically. User passes `--archetype <name>`.
+- Source-code refactoring (moving files into `src/functions/`, renaming exports, etc.).
+- Migrating tools outside the displaced-tools list (e.g., rome, dprint, lint-staged, pre-commit) — flagged as warnings.
 - Writing into the working tree before user approval — diagnose is strictly read-only.
-- Opening a PR. Retrofit pushes nothing; user runs `gh pr create` themselves.
-- Rolling back a partial retrofit automatically. If executor aborts mid-plan, the user is told which commit to reset to.
+- Opening a PR. Retrofit pushes nothing.
+- Rolling back a partial retrofit automatically.
 - Running outside a git repository.
+- Repos containing **submodules** — diagnose refuses with a clear error.
+- Repos on **case-insensitive filesystems** where a target file collides case-insensitively with an existing one — diagnose refuses.
+- Repos with **symlinks** anywhere in the janus-baseline target paths — diagnose refuses (user must resolve before retrofit).
+- **Drift detection** for janus-shipped files modified by the user — v0.1 always replaces but emits a warning per overwritten file (see §10 for the SHA-based safeguard).
+- Per-package retrofit inside a monorepo — `monorepo-root` archetype sets up the workspace root only.
+- Windows support (Linux + macOS only; consistent with existing janus tooling).
 
 ## 3. Architecture
 
 Three modules, two commands.
 
 ```
-janus diagnose ──► analyzer ──► plan-builder ──► .janus-retrofit.json
-janus retrofit ──► plan-validator ──► executor ──► git ──► .janus.json
+janus diagnose ──► analyzer ──► slot-resolver ──► plan-builder ──► .janus-retrofit.json
+janus retrofit ──► executor (pre-flight + apply) ──► git ──► .janus.json
 ```
 
-| Module           | Owns                                                                 | Inputs                                            | Outputs                                |
-| ---------------- | -------------------------------------------------------------------- | ------------------------------------------------- | -------------------------------------- |
-| **analyzer**     | "What's in this repo?" — package manager, lint/format tools, hooks, `.claude/` contents, dirty tree, existing `.janus.json` | repo path, `--archetype` flag                     | `RepoSnapshot` (in-memory)             |
-| **plan-builder** | "What needs to change?" — diffs snapshot against janus baseline; produces ordered, commit-grouped action list | `RepoSnapshot`, target archetype, janus version   | `Plan` JSON written to disk            |
-| **executor**     | "Apply this plan" — pre-flight, iterate steps, commit per step, write marker on success | `Plan` JSON, repo path                            | git branch `janus/retrofit` with N commits + `.janus.json` |
+| Module            | Owns                                                                                                            | Inputs                                          | Outputs                                                  |
+| ----------------- | --------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- | -------------------------------------------------------- |
+| **analyzer**      | "What's in this repo?" — pkg manager, lint/format tools, hooks, `.claude/` contents, dirty tree, existing marker | repo path, `--archetype` flag                   | `RepoSnapshot` (in-memory)                               |
+| **slot-resolver** | "What template values are needed?" — sources slot values from git remote, `package.json`, prior marker, prompts | `RepoSnapshot`, archetype, prior `.janus.json`  | `SlotMap` (in-memory)                                    |
+| **plan-builder**  | "What needs to change?" — renders templates with slots, computes overlay tree, diffs against snapshot, builds steps | `RepoSnapshot`, `SlotMap`, archetype, janus version | `Plan` JSON written to disk                              |
+| **executor**      | "Apply this plan" — pre-flight, iterate steps, commit per step, write marker on success                         | `Plan` JSON, repo path                          | git branch with N commits + `.janus.json`                |
 
-The split makes each module independently testable: analyzer is pure-read against fixture repos, plan-builder is a pure function `(snapshot, archetype, version) → plan`, executor is the only module that mutates filesystem state.
+The split makes each module independently testable: analyzer is pure-read against fixture repos, slot-resolver is mostly pure (only the prompt path has I/O), plan-builder is a pure function `(snapshot, slots, archetype, version) → plan`, executor is the only module that mutates state.
 
 ## 4. Pre-flight checks
 
-Both commands run pre-flight before doing anything substantive. Diagnose has a smaller set since it doesn't write.
+Both commands run pre-flight before doing anything substantive.
 
 **Diagnose pre-flight:**
 
-1. Current directory is inside a git repository (`git rev-parse --show-toplevel` succeeds).
+1. CWD inside a git repository (`git rev-parse --show-toplevel` succeeds).
 2. `--archetype` is one of the six known values.
-3. If `.janus.json` exists, its `version` is parseable.
-4. Required tools available: `git`, `jq`, `node`.
+3. If `.janus.json` exists, it parses and `schema_version` is recognised.
+4. Required tools available: `git`, `jq`, `node`, plus `mo` (vendored).
+5. **No git submodules** (`git submodule status` empty).
+6. **No symlinks** within paths the chosen archetype's overlay would touch (`find <target_paths> -type l`).
+7. **No case-insensitive collisions** between existing files and janus baseline targets (compute target paths, lowercase, check for collisions in `git ls-files`).
 
 **Retrofit pre-flight (in addition to diagnose's):**
 
-5. `--plan <file>` exists, is readable, parses as JSON, validates against the `Plan` schema.
-6. Plan's `janus_version` matches the running CLI's version (refuse to apply a stale plan).
-7. Plan's `repo_root` matches the current `git rev-parse --show-toplevel`.
-8. Working tree clean: `git status --porcelain` empty.
-9. HEAD is on a tracking branch (not detached).
-10. Branch `janus/retrofit` does not already exist (locally or on `origin`).
-11. Required tools for execution: `git`, `jq`, `node`, `pnpm`, plus `mo` (vendored).
+8. `--plan <file>` exists, is readable, parses as JSON, validates against the `Plan` JSON schema.
+9. Plan's **`schema_version`** matches the running CLI's supported schema version. (Plan's `janus_version` is informational only — drift triggers a warning, not a hard stop. Rationale: schema is the contract; janus_version drift across patch/minor releases shouldn't force regeneration.)
+10. Plan's `repo_root` matches current `git rev-parse --show-toplevel`.
+11. Working tree clean: `git status --porcelain` empty.
+12. HEAD is on a tracking branch (not detached).
+13. The **target branch** (default `janus/retrofit`, overridable with `--branch <name>`) does not exist locally or on `origin`. If default is taken and `--branch` is not supplied, suggest `janus/retrofit-2`, `janus/retrofit-3`, etc. and exit. (Re-running retrofit after a partial run is supported by passing a fresh `--branch`.)
+14. Required tools for execution: as in diagnose, plus `pnpm`.
 
 Any failure aborts with a specific error message and a suggested remediation. None of the pre-flight checks modify state.
 
 ## 5. Analyzer
 
-The analyzer produces a `RepoSnapshot` — a structured description of everything retrofit cares about. It is purely observational; no judgments about what to do are made here.
+The analyzer produces a `RepoSnapshot` — a structured description of everything retrofit cares about. It is purely observational; no judgments about what to do are made here. **The analyzer never reads source code under `src/`.** Its scope is config, hooks, docs, and `.claude/`.
 
 **RepoSnapshot fields:**
 
 ```ts
 type RepoSnapshot = {
-  repo_root: string;                    // absolute path
-  has_janus_marker: boolean;            // .janus.json exists
-  prior_marker?: JanusMarker;           // parsed contents if present
+  repo_root: string;
+  has_janus_marker: boolean;
+  prior_marker?: JanusMarker;
   package_manager: 'pnpm' | 'npm' | 'yarn' | 'none';
-  lockfiles_present: string[];          // ['package-lock.json', ...]
-  package_json?: PackageJsonSnapshot;   // parsed, never mutated here
+  lockfiles_present: string[];
+  package_json?: PackageJsonSnapshot;
   workspace?: { type: 'pnpm', packages: string[] };
-  displaced_tools: DisplacedTool[];     // each = { tool, evidence: ['.eslintrc.json', 'package.json:devDependencies.eslint'] }
-  janus_baseline_files: FileStatus[];   // for every file _shared/ or archetype overlay would write: { path, status: 'missing'|'present'|'differs' }
-  claude_kit: {
-    settings_json?: ClaudeSettingsSnapshot;
-    claude_md_present: boolean;
-    claude_local_md_present: boolean;
-    skills: string[];                   // filenames in .claude/skills/
-    commands: string[];
-    hooks: string[];
-  };
-  ci_workflows: string[];               // .github/workflows/*.yml
-  unknown_tools: string[];              // tools we can't classify (rome, dprint, lint-staged, etc.) — surfaced as warnings
-  git: {
-    head_branch: string;
-    is_tracking: boolean;
-    tree_clean: boolean;
-  };
+  displaced_tools: DisplacedTool[];           // see detection rules below
+  baseline_files: BaselineFileStatus[];        // see §6
+  claude_kit: ClaudeKitSnapshot;
+  ci_workflows: WorkflowFile[];                // path + 'references_displaced_tool': string[]
+  unknown_tools: string[];                     // see §6
+  git: { head_branch: string; is_tracking: boolean; tree_clean: boolean; has_submodules: boolean };
+  remote: { origin_url?: string; parsed?: { host: string; org: string; repo: string } };
 };
 ```
 
@@ -116,59 +117,117 @@ type RepoSnapshot = {
 - `displaced_tools.husky` if `.husky/` directory exists OR `package.json:devDependencies.husky`.
 - `displaced_tools.jest` if `jest.config.*`, `package.json:devDependencies.jest`, `package.json:jest`.
 - `displaced_tools.commitlint_old` if commitlint is present but configured differently than janus's `commitlint.config.js`.
-- `unknown_tools` populated for anything in a curated denylist of known TS-ecosystem tools we don't have an opinion on yet (rome, dprint, lint-staged, etc.).
 
-**`janus_baseline_files`** is computed by walking `_shared/` and the chosen archetype's directory in the janus install. For every file janus would write, the analyzer records whether the target path is missing, byte-identical, or differs.
+**`baseline_files`** is computed by walking the *rendered overlay tree* (see §6) and comparing each target file. For every target path:
 
-The analyzer never reads source code under `src/`. Its scope is config, hooks, docs, and `.claude/`.
+```ts
+type BaselineFileStatus = {
+  path: string;                                  // relative to repo_root
+  status: 'missing' | 'present_identical' | 'present_differs';
+  pre_state_hash?: string;                       // sha256 of current file content; only when status != 'missing'
+};
+```
+
+**`unknown_tools`** is populated against a curated denylist of known TS-ecosystem tools we don't have an opinion on yet. **The denylist lives in `docs/conventions/dependencies.md`** (currently a stub — perfect home), so the rule is reviewable in the conventions doc rather than buried in code.
+
+## 5a. Slot resolution
+
+janus templates use Mustache `<%snake_case%>` placeholders (workload, github_org, author_name, etc.). For greenfield, scaffold.sh prompts the user. For retrofit, we want a deterministic, hand-editable plan, so slots are resolved up front.
+
+**Source order per slot (first hit wins):**
+
+1. **Prior `.janus.json`** — if `slots` block present, use those values. (This makes re-runs frictionless.)
+2. **Auto-source from snapshot:**
+   - `github_org`, `workload` ← parsed from `RepoSnapshot.remote.parsed`
+   - `author_name`, `author_email` ← `package.json:author` (string parse) or `git config`
+   - `description` ← `package.json:description`
+   - `node_version` ← `.nvmrc` or `package.json:engines.node`
+3. **Interactive prompt** — only for slots still unresolved after steps 1–2.
+4. **`--slot key=value` CLI flags** — override any of the above. Repeatable. Useful for non-interactive / CI runs.
+
+**Required slots vary by archetype.** A static manifest at `templates/<archetype>/slots.json` declares which slots that archetype's templates reference and which are required vs. defaultable. plan-builder fails fast if a required slot is unresolved at end of the source chain.
+
+**`SlotMap` is persisted in two places:**
+- Inside the plan JSON (so retrofit doesn't re-prompt).
+- Inside `.janus.json` (so future diagnose runs reuse).
+
+This makes the diagnose step **deterministic given the same inputs**: identical snapshot + identical slots → identical plan JSON. Two diagnose invocations on a clean repo will produce byte-identical plans only if either (a) interactive prompts are answered identically or (b) `--slot` flags supply all values. CI/test fixtures use the latter.
 
 ## 6. Plan-builder
 
-Pure function: `buildPlan(snapshot, archetype, janus_version) → Plan`.
+Pure function: `buildPlan(snapshot, slotMap, archetype, janus_version) → Plan`.
 
-The plan is an ordered list of **steps**. Each step becomes one commit. Steps are grouped by category for readability and review:
+**Overlay tree computation (mirrors `scripts/scaffold.sh` exactly):**
 
-1. `displace-tools` — one step per displaced tool. Each removes config files, removes devDependencies, removes scripts that reference the tool. (e.g., "remove eslint": delete `.eslintrc.json`, `package.json:devDependencies.eslint`, scripts matching `/eslint/`.)
-2. `set-package-manager` — one step. Updates `package.json:packageManager`, deletes non-pnpm lockfiles.
-3. `apply-shared-overlay` — one step per file group: configs (`biome.jsonc`, `lefthook.yml`, `commitlint.config.js`, `tsconfig.base.json`, `tsconfig.json`), root docs (`AGENTS.md`, `README.md`, `LICENSE`, `SECURITY.md`, `CODEOWNERS`), conventions (`docs/conventions/*`).
-4. `apply-archetype-overlay` — one step per file group within the archetype. Files are organized into commit-sized chunks (config, infra, source skeleton, tests skeleton).
-5. `merge-claude-kit` — multiple steps:
-   - `claude-settings-merge` — additive merge of `settings.json`.
-   - `claude-md-snapshot` — rename existing `CLAUDE.md` → `CLAUDE.local.md`, write janus's `CLAUDE.md`.
-   - `claude-skills-overlay` — overlay janus's skills, replacing on filename collision, preserving user-only files.
-   - `claude-commands-overlay`, `claude-agents-overlay`, `claude-hooks-overlay` — same rule.
-6. `install-deps` — one step. Adds janus's devDependencies to `package.json`, runs `pnpm install`, commits the updated `pnpm-lock.yaml`.
+The plan-builder builds a single in-memory **rendered overlay tree** before producing steps. This is the source of truth for "what janus says this repo should contain."
+
+Algorithm (matches scaffold.sh):
+
+1. Walk `templates/_shared/`. For each file:
+   - Skip if it matches a path in `templates/<archetype>/.exclude`.
+   - If filename ends in `.tmpl`, render via `mo` with `slotMap`; output path drops `.tmpl`.
+   - Otherwise copy verbatim.
+   - Add to tree at the resulting path.
+2. Walk `templates/<archetype>/`. For each file:
+   - Skip `.exclude` itself, and any other meta files documented in the archetype manifest.
+   - **`package.json.tmpl` is special:** render with `mo`, then jq deep-merge over the shared `package.json` already in the tree (`jq -s '.[0] * .[1]'`).
+   - **`.env.example` is special:** append to shared file (if shared has one), don't replace.
+   - Otherwise: render-or-copy and **overwrite** any same-path entry from step 1. (Per AGENTS.md: archetype takes precedence on collision.)
+3. If the archetype excludes `infra/`, strip `deploy:staging` and `deploy:prod` from `package.json:scripts` (matches scaffold.sh's special-case at line 314).
+
+The result is a flat map `{ path → { content_bytes, mode } }`. Plan-builder uses this as its target-state input. **No "_shared then archetype" two-pass at execution time** — the overlay collapse happens in plan-builder; executor sees only the final desired contents.
+
+**Steps (each becomes one commit):**
+
+Steps are grouped by category for readability and review. **Within a category, ordering is alphabetical by step `id`** to guarantee determinism across diagnose runs.
+
+1. `displace-tools` — one step per displaced tool. Each removes config files, removes devDependencies, removes scripts that reference the tool.
+2. `set-package-manager` — one step. Sets `package.json:packageManager` to `pnpm@<version-from-shared-template>`, deletes non-pnpm lockfiles.
+3. `apply-shared-overlay` — one step per file group from the rendered overlay tree:
+   - `configs` (`biome.jsonc`, `lefthook.yml`, `commitlint.config.js`, `tsconfig.base.json`, `tsconfig.json`)
+   - `root-docs` (`AGENTS.md`, `README.md`, `LICENSE`, `SECURITY.md`, `CODEOWNERS`)
+   - `conventions` (`docs/conventions/*`)
+4. `apply-archetype-overlay` — one step per file group within the archetype (config, infra, src skeleton, tests skeleton). The plan-builder selects only files in the rendered tree that came from the archetype overlay (or were modified by it), to keep step diffs reviewable.
+5. `merge-claude-kit`:
+   - `claude-settings-merge` — additive merge of `settings.json` (rules in §8).
+   - `claude-md-snapshot` — rename existing `CLAUDE.md` → `CLAUDE.pre-janus.md`, write janus's `CLAUDE.md`, insert `@CLAUDE.pre-janus.md` as the second line of the new file (after the existing `@AGENTS.md` import, so AGENTS conventions load first and the user's prior prose loads as supplementary context).
+   - `claude-skills-overlay`, `claude-commands-overlay`, `claude-agents-overlay`, `claude-hooks-overlay` — overlay-with-replace; each janus-shipped file that already exists in the target generates a `WARN_OVERWRITE_USER_KIT` warning if its `pre_state_hash` doesn't match the hash recorded for that file in janus's release manifest (or unconditionally for v0.1, since no release manifest exists yet).
+6. `install-deps` — **omitted entirely if `archetype === 'monorepo-root'`** (workspace install is left to the user; documented in plan output). Otherwise: writes the merged `package.json` from the rendered tree, runs `pnpm install`, commits the resulting `pnpm-lock.yaml`. See §9 for failure handling.
 7. `write-marker` — one step. Writes `.janus.json`.
 
-Each step records:
-
-- Pre-condition checks (idempotency: skip if already done).
-- Concrete operations (file writes, file deletes, JSON-path edits).
-- The exact commit message to use.
-
-If the snapshot shows a category is already in the desired state (e.g., repo is already on pnpm), the corresponding step is omitted. This makes the plan idempotent: running `diagnose` against an already-retrofitted repo produces a plan with zero or only-update steps.
+**Idempotency on re-run:** if the snapshot shows a category is already in the desired state (e.g., repo already on pnpm; biome.jsonc byte-identical to rendered version), the corresponding step is omitted. Diagnose against an already-retrofitted repo produces a plan with zero or only-update steps.
 
 ## 7. Plan JSON schema
 
-The plan file is the contract between diagnose and retrofit. It must be stable enough to be hand-edited (drop a step you don't want) and re-applied.
+The plan file is the contract between diagnose and retrofit. Validated against `src/retrofit/schema/plan.schema.json` at retrofit pre-flight (check #8).
 
 ```jsonc
 {
-  "schema_version": "1",
-  "janus_version": "0.1.0",
+  "schema_version": "1",                       // ← retrofit checks this, not janus_version
+  "janus_version": "0.1.0",                    // informational; warning on mismatch
   "generated_at": "2026-05-04T15:30:00Z",
   "repo_root": "/home/skip/git/foo",
   "archetype": "backend-functions",
-  "prior_marker": null,                  // or the contents of existing .janus.json
+  "target_branch": "janus/retrofit",           // from --branch or default
+  "slots": {                                    // resolved values from §5a
+    "workload": "foo",
+    "github_org": "pantheon-tech",
+    "author_name": "Daniel Smith",
+    "author_email": "daniel@skipper.kiwi",
+    "node_version": "24",
+    "region": "westus2"
+  },
+  "prior_marker": null,                         // contents of existing .janus.json or null
   "warnings": [
-    { "code": "UNKNOWN_TOOL", "message": "lint-staged detected; not migrated", "evidence": ["package.json:devDependencies.lint-staged"] }
+    { "code": "UNKNOWN_TOOL", "message": "lint-staged detected; not migrated", "evidence": ["package.json:devDependencies.lint-staged"] },
+    { "code": "WORKFLOW_REFERENCES_DISPLACED_TOOL", "message": ".github/workflows/ci.yml runs `npm ci` and `eslint`", "evidence": [".github/workflows/ci.yml"] }
   ],
   "steps": [
     {
       "id": "displace-eslint",
       "category": "displace-tools",
       "title": "Remove eslint",
-      "commit_message": "chore(retrofit): remove eslint in favor of biome",
+      "commit_message": "chore: remove eslint in favor of biome",
       "preconditions": [
         { "type": "file_exists", "path": ".eslintrc.json" }
       ],
@@ -176,86 +235,106 @@ The plan file is the contract between diagnose and retrofit. It must be stable e
         { "op": "delete_file", "path": ".eslintrc.json" },
         { "op": "json_remove", "path": "package.json", "pointer": "/devDependencies/eslint" },
         { "op": "json_remove_matching", "path": "package.json", "pointer": "/scripts", "value_regex": "eslint" }
-      ]
-    },
-    // ...
-    {
-      "id": "claude-settings-merge",
-      "category": "merge-claude-kit",
-      "title": "Merge .claude/settings.json",
-      "commit_message": "chore(retrofit): merge janus settings into .claude/settings.json",
-      "preconditions": [],
-      "operations": [
-        {
-          "op": "claude_settings_merge",
-          "additions": {
-            "permissions": { "allow": ["Bash(pnpm:*)", "Bash(biome:*)"] },
-            "hooks": { "PostToolUse": [/* ... */] }
-          }
-        }
-      ]
+      ],
+      "commit_paths": [".eslintrc.json", "package.json"]
     }
+    // ...
   ]
 }
 ```
 
-**Operation vocabulary (closed set):**
+**Commit message convention:** all retrofit commits use **`chore:` with no scope**. Rationale:
+- The Conventional Commits specification accepts `<type>:` without scope.
+- The very first retrofit commit may land *before* janus's lefthook/commitlint config is installed, so commit-msg hooks may not yet enforce anything; commits *after* will be validated by the just-installed config. `chore:` is valid in both states.
+- This avoids inventing a `retrofit` scope that conflicts with the user's pre-existing commitlint config (if any).
+- Executor never uses `--no-verify`. If a commit-msg hook fails, the executor aborts and the user is told why.
+
+**Operation vocabulary (closed set, executor refuses unknown ops at pre-flight):**
 
 | Op                       | Meaning                                                                         |
 | ------------------------ | ------------------------------------------------------------------------------- |
-| `write_file`             | Write file with given content (utf-8). Fails if exists unless `overwrite: true`.|
-| `delete_file`            | Delete file. No-op if missing.                                                  |
+| `write_file`             | Write file with given content (utf-8). Required: `path`, `content`. Optional: `pre_state_hash` (executor verifies if the path exists; aborts on mismatch — closes TOCTOU window). Optional: `overwrite: true` (default false; required if file exists). |
+| `delete_file`            | Delete file. No-op if missing. Optional: `pre_state_hash`.                      |
 | `delete_directory`       | Recursive delete. No-op if missing.                                             |
 | `rename_file`            | Move within repo. Fails if destination exists.                                  |
 | `json_set`               | Set JSON pointer to value.                                                      |
 | `json_remove`            | Remove JSON pointer. No-op if missing.                                          |
 | `json_remove_matching`   | Remove keys under pointer whose values match regex.                             |
 | `json_merge`             | Deep-merge object into pointer location (additive — no overwrites of scalars).  |
-| `claude_settings_merge`  | Specialized: additive merge of `.claude/settings.json` (see §8).                |
-| `shell`                  | Run a whitelisted command (`pnpm install`, `pnpm dedupe`). Args are static; no interpolation from snapshot. |
+| `claude_settings_merge`  | Specialized: per-field merge of `.claude/settings.json` (see §8).                |
+| `shell`                  | Run a whitelisted command. **Whitelist (closed):** `pnpm install`, `pnpm dedupe`. Args are static literals defined in plan; executor refuses any `shell` op whose `command` is not on the whitelist, even if the JSON parses. **`commit_paths` field is required** for shell ops — executor stages only those paths after the command runs; any other modified files trigger an abort with `EXTRANEOUS_FILE_MODIFICATIONS`. |
 
-The vocabulary is intentionally closed: the executor is a switch statement, not an interpreter. Adding a new op type is a code change to both plan-builder and executor.
+**Step-level fields:**
+
+- `commit_paths: string[]` — paths the executor will `git add` for this step's commit. Defined per-step (not per-op) so monitoring extraneous changes is straightforward. Executor validates that no other files are modified before committing.
+- `preconditions` are AND-combined; if any fails, the step is **skipped** (recorded as `skipped` in the run report). This is what makes plans idempotent across re-runs.
+
+**Determinism:** plan-builder must produce byte-identical JSON for identical inputs. This is a **testable contract**: a CI test runs diagnose against a fixture repo with fixed slots, hashes the plan output, asserts the hash matches a golden value.
 
 ## 8. `.claude/` merge rules
 
-This is the most delicate part of retrofit because `.claude/` accumulates user state.
+This is the most delicate part of retrofit because `.claude/` accumulates user state. The rules below apply per known field — there is **no generic "deep merge" fallback**, since deep-merge of arbitrary user state has too many failure modes.
 
-**`settings.json`** — `claude_settings_merge` op semantics:
+**`.claude/settings.json`** — `claude_settings_merge` op. Per-field rules:
 
-- For array fields (`permissions.allow`, `permissions.deny`, `hooks.<event>`): append janus entries that aren't already present. Dedupe by deep equality. Never remove user entries.
-- For scalar fields (`model`, `theme`, `cleanupPeriodDays`): if user has set the field, preserve user's value and emit a warning in the plan (`SETTINGS_SCALAR_CONFLICT`). If unset, set to janus's default.
-- For object fields not enumerated above: deep-merge with the same scalar-conflict rule applied recursively.
+| Field                                  | Merge rule                                                                                                                   |
+| -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `permissions.allow`, `permissions.deny`| Append janus's entries that aren't string-identical to any existing entry. Don't try to detect glob coverage (too clever). Emit `SETTINGS_PERMISSION_REDUNDANT` warning if both a broad (`Bash(pnpm *)`) and a narrower (`Bash(pnpm install)`) entry end up present after merge. |
+| `hooks.<event>` (array of objects)     | For each janus entry, look for an existing entry with the same `(matcher, hook command basename)` pair. If absent, append. If present and command differs → emit `SETTINGS_HOOK_CONFLICT` warning, keep user's. If present and command identical → no-op.    |
+| `enabledPlugins` (object)              | Shallow merge: union of keys. On key conflict, **janus wins** (plugin enable/disable is authoritative). Emit warning per overridden key. |
+| `model`, `theme`, `cleanupPeriodDays`, other top-level scalars | If user has set the field, **preserve user's value** and emit `SETTINGS_SCALAR_CONFLICT` warning. If unset, write janus default.       |
+| Top-level fields janus doesn't ship    | Untouched.                                                                                                                   |
+
+The canonical "what janus ships in settings.json" is defined by `SETTINGS_BASE` in `scripts/scaffold.sh` (lines 354+). plan-builder reuses the same construction logic so retrofit and scaffold stay aligned.
 
 **`CLAUDE.md`** — never merged.
 
-- If existing `CLAUDE.md` is present: rename to `CLAUDE.local.md`, write janus's template at `CLAUDE.md`, add a one-line `@CLAUDE.local.md` import at the top of the new `CLAUDE.md` so the user's prose still loads.
-- If `CLAUDE.local.md` already exists at retrofit time: abort step with a specific error; user must resolve.
+- If existing `CLAUDE.md` is present: rename to `CLAUDE.pre-janus.md`, write janus's template (rendered via `mo`), and **insert `@CLAUDE.pre-janus.md` as the second line** (after the existing `@AGENTS.md` import in the janus template). User's prose still loads, AGENTS conventions load first.
+- **Why `CLAUDE.pre-janus.md` and not `CLAUDE.local.md`:** `CLAUDE.local.md` is conventionally git-ignored by Claude Code (it's the local-only override file). Snapshot is meant to *preserve* user intent, not silently drop it from version control. The `pre-janus` name is also self-documenting.
+- If `CLAUDE.pre-janus.md` already exists at retrofit time: abort step with `CLAUDE_PRE_JANUS_EXISTS` error; user must rename or delete first.
+- Plan-builder writes the chosen target path as `claude_md_snapshot.target_path` in the step JSON so the user can audit (and override by hand-editing the plan) before approving.
 
 **Skills, commands, agents, hooks** — overlay-with-replace:
 
-- Janus is the source of truth for any filename it ships. On collision, janus's version wins (the rationale: shipped skills are versioned artifacts, like a package upgrade).
+- Janus is the source of truth for any filename it ships. On collision, janus's version wins (rationale: shipped skills are versioned artifacts, like a package upgrade).
 - User-only files (those janus doesn't ship) are preserved untouched.
-
-**Detection of "user-modified" janus files:** out of scope for v0.1. v0.1 always replaces. (Future: compare against the version recorded in `.janus.json` to detect drift.)
+- Each overwrite of a pre-existing user file emits a `WARN_OVERWRITE_USER_KIT` warning in the plan, with the file path. v0.1 surfaces these so the user knows what's about to change. Drift detection (skip overwrite if user modified) is deferred — see §13.
 
 ## 9. Executor
 
 The executor is a loop over plan steps. Per step:
 
-1. Evaluate preconditions. If any fail, **skip the step** (record as `skipped` in the run report). This is what makes the plan idempotent on re-runs.
-2. Execute operations in order. Each operation is either fully applied or throws.
-3. `git add` the affected paths, then `git commit -m <step.commit_message>`.
-4. On any failure mid-step: abort the entire run. Print which step failed, what error, and the SHA of the last successful commit. Do not attempt to roll back — the user has a clean branch with N successful commits and can `git reset --hard <sha>` if they want to discard.
+1. Evaluate `preconditions`. If any fail, **skip the step** (record as `skipped`). Idempotent on re-runs.
+2. For each operation that has a `pre_state_hash`: read the file, compute SHA-256, abort step if mismatch (`PRE_STATE_HASH_MISMATCH`). Closes the TOCTOU window between diagnose and retrofit.
+3. Execute operations in order. Each operation is fully applied or throws.
+4. Compute the actual set of modified paths (`git status --porcelain`); compare against `step.commit_paths`. If any extra path was modified → abort with `EXTRANEOUS_FILE_MODIFICATIONS`.
+5. `git add` the paths in `commit_paths`, then `git commit -m <step.commit_message>`. **No `--no-verify`.** If a commit-msg hook fails (e.g., commitlint rejects), executor aborts and prints the hook output.
 
-After all steps complete:
+**On abort:**
+- Print which step failed, the error code, the SHA of the last successful commit, and a `git reset --hard <sha>` hint.
+- **Do not attempt rollback.** The user has a clean branch with N successful commits and one failed step. They can fix forward (resolve the issue, re-run retrofit on a fresh `--branch`) or `git reset --hard` to discard.
+- Why no rollback: rollback in git is `git reset --hard`, which loses any user-side fix-in-progress. Telling the user explicitly is honest; pretending we can clean up automatically risks losing work.
 
-5. Write `.janus.json`.
-6. `git add .janus.json && git commit -m "chore(retrofit): write janus marker"`.
-7. Print a summary: branch name, commit count, next-step hint (`git push -u origin janus/retrofit && gh pr create`).
+**`pnpm install` failure (step `install-deps`):**
+- The `package.json` write happens in the same step as the `pnpm install` shell op. If the shell op fails, the step's commit hasn't been made yet. The executor aborts; `package.json` is left modified in the working tree.
+- User options: fix the underlying issue (peer dep, registry auth, network) and re-run retrofit on a fresh `--branch` (idempotency skips already-applied steps), or `git reset --hard` to discard the package.json edit.
+- Documented in the plan's `warnings` if `install-deps` is present (`INSTALL_DEPS_MAY_FAIL`).
 
-The executor does not push. It does not open PRs. It does not call `pnpm install` except as a `shell` op declared in the plan.
+**After all steps complete:**
 
-**Why no automatic rollback:** rollback in git is `git reset --hard`, which requires a clean tree. After a mid-step failure the tree is dirty (the failing op may have written some files). Telling the user "reset to <sha>" is honest; pretending we can clean up automatically risks losing user work.
+6. Write `.janus.json`.
+7. `git add .janus.json && git commit -m "chore: write janus marker"`.
+8. Print summary: branch name, commit count, warnings count, next-step hint:
+
+```
+✓ Retrofit complete on branch janus/retrofit (12 commits, 2 warnings)
+
+Next steps:
+  git push -u origin janus/retrofit
+  gh pr create --base staging   # janus convention: feature PRs target staging, not main
+```
+
+The PR base hint matches `docs/conventions/git-workflow.md`. The branch name `janus/<...>` is a deliberate exception to the `feat/`/`fix/`/`chore/` naming convention — this is tooling-driven, not author-driven, and `janus/` makes its origin obvious. Documented as such in the plan output.
 
 ## 10. State tracking — `.janus.json`
 
@@ -268,31 +347,66 @@ Lives at the repo root. Committed to git. Format:
   "archetype": "backend-functions",
   "applied_at": "2026-05-04T15:42:00Z",
   "applied_steps": ["displace-eslint", "displace-prettier", "...", "write-marker"],
-  "skipped_steps": []
+  "skipped_steps": [],
+  "slots": {                                  // ← persisted from plan; powers re-run frictionlessness
+    "workload": "foo",
+    "github_org": "pantheon-tech",
+    "author_name": "Daniel Smith",
+    "author_email": "daniel@skipper.kiwi",
+    "node_version": "24",
+    "region": "westus2"
+  },
+  "shared_overlay_version": "0.1.0",          // ← copied from janus_version at write time; future drift-detection input
+  "archetype_overlay_version": "0.1.0"
 }
 ```
 
-**Why at repo root:** same logic as `.nvmrc` or `package.json:packageManager` — discoverability matters. Hiding it inside `.claude/` would mean a future janus engineer doing a code review wouldn't immediately see "this repo was janus-retrofitted at v0.1.0."
+**Why at repo root:** discoverability — same logic as `.nvmrc` or `package.json:packageManager`. A future janus engineer doing a code review immediately sees "this repo was retrofitted at v0.1.0."
 
-**How re-runs work:** on subsequent `diagnose`, if `.janus.json` is present, the analyzer reads it and the plan-builder produces an *update plan* — only steps where janus's baseline has changed since `applied_at` (new conventions, new shared files) appear. The diff between the marker's `janus_version` and the running CLI's version drives this.
-
-For v0.1, "update plan" generation is the same code path as "fresh plan" generation: idempotent step preconditions naturally skip already-applied work. A dedicated `janus update` subcommand can come later.
+**How re-runs work:**
+- Subsequent `diagnose` reads `.janus.json`, populates `slots` from it without re-prompting (unless `--slot key=value` overrides), and produces an update plan.
+- For v0.1, "update plan" generation is the same code path as "fresh plan." Idempotent step preconditions naturally skip already-applied work. A dedicated `janus update` subcommand can come later.
+- The `shared_overlay_version` and `archetype_overlay_version` fields are written but not yet *read* by v0.1 — they're forward-compat input for future drift detection and update-only step selection.
 
 ## 11. CLI surface
 
 ```
-janus diagnose --archetype <name> [--out <path>]
+janus diagnose --archetype <name> [--out <path>] [--slot key=value ...]
   - Default --out: ./.janus-retrofit.json
+  - --slot key=value (repeatable) overrides any auto-sourced or prompted slot
+  - Stdout: human summary at end (see below)
   - Exit 0 if plan generated (even if it has zero steps)
   - Exit 1 on pre-flight failure
   - Exit 2 on internal error
 
-janus retrofit --plan <path> [--dry-run]
+janus retrofit --plan <path> [--branch <name>] [--dry-run]
+  - --branch defaults to 'janus/retrofit'; if taken and not overridden, exits with suggestion
   - --dry-run: validate plan + print step summary, exit without committing
   - Exit 0 on success
   - Exit 1 on pre-flight failure
-  - Exit 2 on mid-execution failure (prints last-good SHA)
+  - Exit 2 on mid-execution failure (prints last-good SHA + suggested git reset command)
   - Exit 3 on internal error
+```
+
+**Diagnose stdout format (human-readable summary, after writing JSON):**
+
+```
+janus diagnose v0.1.0 — backend-functions archetype
+
+Plan: 12 steps (3 displace-tools, 4 apply-overlay, 4 merge-claude-kit, 1 install-deps)
+Warnings: 2
+  - UNKNOWN_TOOL: lint-staged detected; not migrated (package.json:devDependencies.lint-staged)
+  - WORKFLOW_REFERENCES_DISPLACED_TOOL: .github/workflows/ci.yml runs `npm ci` and `eslint`
+
+Files to be overwritten (5):
+  package.json                 (sha256:abc1234… → merged content)
+  .claude/settings.json        (sha256:def5678… → additive merge)
+  README.md                    (sha256:ghi9abc… → janus template)
+  .claude/skills/foo.md        (sha256:jkl3def… → janus version) [WARN_OVERWRITE_USER_KIT]
+  .claude/hooks/session.sh     (sha256:mno6ghi… → janus version) [WARN_OVERWRITE_USER_KIT]
+
+Plan written to .janus-retrofit.json
+Next: review the plan, then run `janus retrofit --plan .janus-retrofit.json`
 ```
 
 Both subcommands surface in `janus --help`. Existing subcommands (`scaffold`, `bootstrap`) are untouched.
@@ -301,15 +415,18 @@ Both subcommands surface in `janus --help`. Existing subcommands (`scaffold`, `b
 
 **Unit:**
 
-- Analyzer: against ~10 fixture repo directories (greenfield, eslint-only, prettier+husky, pnpm-workspace, npm-with-jest, already-janus, etc.) — each fixture is a directory under `tests/fixtures/repos/<name>/`. Assert on `RepoSnapshot` shape.
-- Plan-builder: pure function tests. Given a snapshot + archetype + version, assert the plan matches a golden JSON file. Snapshot tests; update goldens with `--update-snapshots` flag.
-- Operation handlers: each op type (`write_file`, `json_remove`, `claude_settings_merge`, etc.) tested in isolation against a temp directory.
+- Analyzer: against ~10 fixture repo directories under `tests/fixtures/repos/<name>/` (greenfield, eslint-only, prettier+husky, pnpm-workspace, npm-with-jest, already-janus, repo-with-submodule, repo-with-symlink, repo-with-user-modified-skill, monorepo). Assert on `RepoSnapshot` shape.
+- Slot-resolver: assert correct values pulled from each source; assert prompt-only-for-missing.
+- Plan-builder: pure function tests. Given a snapshot + slots + archetype + version, assert plan matches a golden JSON file (snapshot tests; update goldens with `--update-snapshots` flag). **One test per archetype × per fixture-repo-shape** asserts byte-identical plan output across runs (determinism contract).
+- Operation handlers: each op type tested in isolation against a temp directory.
 
 **Integration:**
 
-- For each archetype, an end-to-end smoke test: spin up a fixture pre-janus repo in a temp dir, run `diagnose` then `retrofit`, assert the resulting tree matches a golden snapshot.
+- For each archetype, end-to-end smoke test: spin up a fixture pre-janus repo in a temp dir, run `diagnose --slot ...` (non-interactive), then `retrofit`, assert resulting tree matches a golden snapshot, assert all expected commits exist with the right messages.
 - Re-run `diagnose` after `retrofit`: assert plan is empty (idempotency check).
-- Pre-flight tests: dirty tree, detached HEAD, existing `janus/retrofit` branch, mismatched version — each must exit non-zero with the right error code.
+- Pre-flight tests: dirty tree, detached HEAD, existing target branch, mismatched schema_version, repo-with-submodule, repo-with-symlink, case-collision — each must exit non-zero with the right error code.
+- **`WARN_OVERWRITE_USER_KIT` test**: fixture has a user-modified `.claude/skills/foo.md`; diagnose must include the warning; retrofit must overwrite (v0.1 behavior) but the warning must be visible in the plan and stdout.
+- **commit-msg hook collision test**: fixture has a pre-existing commitlint config that disallows `chore:` (artificial — to verify executor surfaces the hook failure cleanly rather than swallowing it).
 
 **Manual:**
 
@@ -322,24 +439,27 @@ Tests run as part of `pnpm test` (alongside existing scaffold/bootstrap smoke te
 - Archetype auto-detection.
 - Source code refactoring / file movement.
 - Migrating tools outside the displaced-tools list (rome, dprint, lint-staged, etc.) — flagged as warnings.
-- `janus update` as a distinct subcommand (re-running diagnose+retrofit serves this need for v0.1).
-- Drift detection for janus-shipped files modified by the user.
+- `janus update` as a distinct subcommand (re-running diagnose+retrofit serves this need for v0.1; `shared_overlay_version` field in `.janus.json` is forward-compat input for the future implementation).
+- Drift detection for janus-shipped files modified by the user (skip overwrite if drift detected). v0.1 always replaces and warns.
 - Automatic PR creation.
 - Automatic rollback on failure.
-- Multi-package monorepo retrofit beyond the `monorepo-root` archetype's own files (i.e., we set up the workspace root but don't retrofit each package).
-- Windows support (Linux + macOS only; consistent with existing janus tooling).
+- Per-package retrofit inside a monorepo. `monorepo-root` archetype sets up the workspace root only; `install-deps` step is omitted for that archetype.
+- Submodules, symlinks within target paths, case-insensitive FS collisions — diagnose refuses with clear errors.
+- Windows.
 
 ## 14. Risks & open questions
 
-- **Plan format stability.** Schema is versioned (`schema_version: "1"`), but a v0.2 that adds a new op type means v0.1 plans can still be applied (forward-compat) but v0.2 plans can't be applied by v0.1 retrofit (backward-compat by design — refuse with clear error).
-- **`pnpm install` side effects.** The `install-deps` step runs `pnpm install`, which may resolve to slightly different versions over time. Lockfile is committed in the same step, so subsequent runs are deterministic, but the *first* retrofit's lockfile depends on when it was run. Acceptable.
-- **`.claude/settings.json` scalar conflicts.** If user has `model: opus` and janus default is `sonnet`, the warning is emitted but execution continues. Verify this matches user intuition; consider promoting to a hard-stop if it causes confusion in dogfooding.
-- **Workspace repos.** For `monorepo-root` archetype, retrofit operates only on the root. Per-package retrofit (each workspace package being its own archetype) is deferred. Need to ensure `diagnose` doesn't accidentally classify a workspace member as a standalone repo when run from inside one.
-- **CI workflows.** Listed in `RepoSnapshot.ci_workflows` but v0.1 doesn't modify them. If a workflow references `npm ci` or `eslint`, it'll break post-retrofit. Surface these as warnings during diagnose so the user knows what to fix.
+- **Plan format stability.** Schema is versioned (`schema_version: "1"`); v0.2 plans with new op types are refused by v0.1 retrofit. v0.1 plans applied by future versions remain forward-compatible if op semantics don't change.
+- **`pnpm install` non-determinism.** Lockfile content depends on registry state at retrofit time. Acceptable — once committed, future runs are deterministic.
+- **`.claude/settings.json` scalar conflicts.** Verify in dogfooding that warning + preserve-user is the right default; consider promoting to hard-stop if confusion arises.
+- **Workspace repos.** v0.1 explicitly limits `monorepo-root` to root setup only. Need to ensure diagnose run from inside a workspace member errors clearly (since `git rev-parse --show-toplevel` returns the workspace root, not the member; we should detect this and refuse).
+- **CI workflows.** v0.1 emits `WORKFLOW_REFERENCES_DISPLACED_TOOL` warnings but never modifies workflows. Post-retrofit, the user must update CI by hand. Surfaced explicitly so it's not a surprise.
+- **`unknown_tools` denylist drift.** Curated list lives in `docs/conventions/dependencies.md`; needs a process for keeping it current. Acceptable maintenance cost given solo-dev usage.
+- **Slot resolution ergonomics.** First-time retrofit may need 4-6 prompts; subsequent runs reuse `.janus.json`. Good. CI/test runs use `--slot` flags exclusively.
 
 ## 15. Implementation sketch (informational, not normative)
 
-Layout under `bin/` or a new `src/retrofit/` directory:
+Layout under `src/retrofit/`:
 
 ```
 src/retrofit/
@@ -348,27 +468,34 @@ src/retrofit/
 │   ├── package-manager.ts
 │   ├── displaced-tools.ts
 │   ├── claude-kit.ts
-│   └── baseline-diff.ts
+│   ├── baseline-diff.ts    — uses overlay-tree from plan-builder
+│   └── git-state.ts
+├── slot-resolver/
+│   ├── index.ts            — entry: (snapshot, archetype, priorMarker, cliOverrides) → SlotMap
+│   ├── auto-sources.ts     — git remote, package.json, etc.
+│   └── prompt.ts           — interactive prompts for missing slots
 ├── plan-builder/
-│   ├── index.ts            — entry: (snapshot, archetype, version) → Plan
+│   ├── index.ts            — entry: (snapshot, slotMap, archetype, version) → Plan
+│   ├── overlay-tree.ts     — mirrors scaffold.sh: walk shared, walk archetype, jq-merge package.json
 │   ├── steps/
 │   │   ├── displace-tools.ts
 │   │   ├── apply-shared-overlay.ts
 │   │   ├── apply-archetype-overlay.ts
 │   │   ├── merge-claude-kit.ts
-│   │   └── ...
+│   │   └── install-deps.ts
+│   └── determinism.ts      — sort steps, sort warnings, etc.
 ├── executor/
-│   ├── index.ts            — entry: (plan, repoRoot) → RunReport
+│   ├── index.ts            — entry: (plan, repoRoot, branch) → RunReport
 │   ├── preflight.ts
 │   ├── operations/
-│   │   ├── write-file.ts
+│   │   ├── write-file.ts   — handles pre_state_hash check
 │   │   ├── json-set.ts
 │   │   ├── claude-settings-merge.ts
-│   │   └── ...
+│   │   └── shell.ts        — refuses non-whitelisted commands
 │   └── git.ts
 └── schema/
-    ├── plan.schema.json    — JSON schema for the Plan format
-    └── marker.schema.json  — JSON schema for .janus.json
+    ├── plan.schema.json
+    └── marker.schema.json
 ```
 
-The CLI subcommands in `bin/janus.js` import from `src/retrofit/` and do nothing more than parse args and dispatch.
+CLI subcommands in `bin/janus.js` import from `src/retrofit/` and do nothing more than parse args and dispatch.
