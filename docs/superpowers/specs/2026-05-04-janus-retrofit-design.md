@@ -1,6 +1,6 @@
 # janus retrofit — design
 
-**Status:** draft (rev 3 — addresses code-review iterations 1 + 2)
+**Status:** draft (rev 4 — addresses code-review iterations 1 + 2 + 3)
 **Date:** 2026-05-04
 **Author:** Daniel (with Claude)
 **Scope:** v0.1 of `janus diagnose` and `janus retrofit` subcommands
@@ -71,7 +71,7 @@ The split makes each module independently testable.
 5. **No git submodules** (`git submodule status` empty).
 6. **No symlinks** within paths the chosen archetype's overlay would touch (`find <target_paths> -type l`).
 7. **No case-insensitive collisions** between existing files and janus baseline targets.
-8. If `--archetype monorepo-root` and `git rev-parse --show-toplevel` differs from `pwd`'s nearest workspace-root marker, refuse: user has invoked diagnose from inside a workspace member, not the root.
+8. If `--archetype monorepo-root`: search ancestors of `pwd` for a `pnpm-workspace.yaml`. If one is found AND its directory differs from `git rev-parse --show-toplevel`, refuse with `INVOKED_FROM_WORKSPACE_MEMBER`: user has invoked diagnose from inside a workspace member, not the root. (If no `pnpm-workspace.yaml` exists anywhere, the check is a no-op — diagnose proceeds and the resulting plan creates the workspace from scratch.)
 
 **Retrofit pre-flight (in addition to diagnose's):**
 
@@ -143,15 +143,18 @@ type BaselineFileStatus = {
 1. **Prior `.janus.json:slots`** — frictionless re-runs.
 2. **Auto-source from snapshot:**
    - `github_org`, `workload` ← parsed from `RepoSnapshot.remote.parsed`
-   - `author_name`, `author_email` ← `package.json:author` (string parse) or `git config user.name`/`user.email`
-   - `description` ← `package.json:description`
-   - `node_version` ← `.nvmrc` or `package.json:engines.node`
+   - `author`, `author_email` ← `package.json:author` (string parse, splits on `<...>`) or `git config user.name`/`user.email`
+   - `description` ← `package.json:description` (treats empty string as unresolved → falls through)
+   - `node_version` ← `.nvmrc` (raw) or `package.json:engines.node` (parsed: leading integer extracted from range expressions like `>=24`, `^20.0.0`, `24.x`, `24.5.0` → `24`); if no leading integer, treat as unresolved
+   - `archetype` ← passed in via `--archetype` flag (always present; not auto-sourced from repo)
 3. **Interactive prompt** — only for slots still unresolved.
 4. **`--slot key=value` CLI flags** — override any of the above. Repeatable. Required for non-interactive / CI runs.
 
 **Required slot set per archetype** is declared in `templates/<archetype>/slots.json` (a new manifest file, one per archetype). Plan-builder fails fast if a required slot is unresolved.
 
-**Full slot vocabulary (rev-3 addition; matches `scripts/scaffold.sh` exports lines 200–225):** `workload`, `github_org`, `author_name`, `author_email`, `description`, `license`, `node_version`, `region`, `template_version`, `year`, `date`, `base_branch`. Auto-sources defined above for the user-derivable ones; the rest have static defaults (`license=MIT`, `region=westus2`, `template_version=<janus_version>`, `year=<UTC year at retrofit time>`, `date=<UTC date at retrofit time>`, `base_branch=staging`).
+**Full slot vocabulary (matches `scripts/scaffold.sh` exports lines 203–219, normative):** `workload`, `description`, `archetype`, `github_org`, `author`, `author_email`, `node_version`, `license`, `region`, `template_version`, `year`, `date`, `base_branch`. Auto-sources defined above for the user-derivable ones; the rest have static defaults (`license=MIT`, `region=australiaeast` matching scaffold.sh line 90, `template_version=v<janus_version>`, `node_version=24` if no auto-source hits, `year=<UTC year at retrofit time>`, `date=<UTC date at retrofit time>`, `base_branch=staging`).
+
+**Pre-existing slot bug — `<%owner%>` orphan:** `templates/_shared/docs/architecture.md.tmpl` references `<%owner%>` but scaffold.sh never exports it (rendered output is empty). Retrofit's slot-resolver does *not* paper over this. Fix is filed separately as a janus issue and out of scope for v0.1 retrofit. (Surfacing it here so future readers know the architecture.md.tmpl slot list is currently broken in scaffold too.)
 
 **Validation (rev-3 addition):** Every resolved slot is validated against the same regex/format rules `scripts/scaffold.sh` enforces, which are the **normative source of truth**:
 
@@ -160,7 +163,7 @@ type BaselineFileStatus = {
 | `workload`    | `^[a-z][a-z0-9]{2,11}$`                     |
 | `github_org`  | GitHub username/org rules (1-39 chars, alphanumeric + `-`, no leading/trailing `-`) |
 | `author_email`| Standard email regex                        |
-| `node_version`| Major version integer (e.g., `20`, `22`, `24`) |
+| `node_version`| Resolved value must be a major version integer (e.g., `20`, `22`, `24`) **after normalization** in step 2 above. Range expressions like `>=24` or `^20.0.0` are normalized to their leading integer before validation. |
 
 Auto-sourced values that fail validation cause the slot-resolver to fall back to **prompt** (treating the auto-sourced value as absent) so the user can correct. Prompt-supplied values that fail validation re-prompt. `--slot` flag values that fail validation cause `SLOT_VALIDATION_FAILED` exit.
 
@@ -173,10 +176,11 @@ Auto-sourced values that fail validation cause the slot-resolver to fall back to
 `enabledPlugins` is the only `.claude/settings.json` field whose values come from interactive choice in scaffold.sh, not from templates. Retrofit needs the same input. Source order per plugin (mirrors §5a):
 
 1. **Prior `.janus.json:plugins`** — frictionless re-runs.
-2. **Auto-detect from `RepoSnapshot.plugin_evidence`** — fixed list of file globs:
+2. **Auto-detect from `RepoSnapshot.plugin_evidence`** — fixed list of file globs (the evidence basis is ordered and exhaustive for v0.1):
    - `frontend-design@claude-plugins-official` ← `vite.config.{js,ts,mjs}` OR `next.config.*` OR `react` in `package.json:dependencies`
    - `playwright@claude-plugins-official` ← `playwright.config.{js,ts}` OR `@playwright/test` in `devDependencies`
    - `pyright-lsp@claude-plugins-official` ← `pyproject.toml` OR `requirements.txt` OR any `*.py` at repo root
+   - **`banana-claude@banana-claude-marketplace` is not auto-detected** (no reliable evidence file). Only reachable via `--plugin banana-claude@banana-claude-marketplace` or interactive prompt confirmation. scaffold.sh prompts for this one explicitly; retrofit's parallel is the `--plugin` flag.
 3. **`--plugin name@source` CLI flags** — additive. Repeatable. Authoritative for non-interactive / CI runs.
 4. **`--no-plugin name` CLI flags** — subtractive. Removes a plugin auto-detected in step 2.
 5. **Interactive prompt** — confirm the resolved set ("Enable these N plugins? [Y/n] / Add another? [name@source]"). Skipped under `--non-interactive`.
@@ -226,11 +230,11 @@ Plan-builder produces a `PKG_FIELDS_OVERWRITTEN` warning for each affected leaf,
 
 ### 6.6 Steps (each becomes one commit)
 
-Steps are grouped by category. **Within a category, ordering is alphabetical by step `id`** to guarantee determinism.
+Steps are grouped by category. **Within a category, ordering is alphabetical by step `id`** to guarantee determinism. **Within a step, `operations[]` ordering is fixed by the plan-builder per step type (not sorted) — semantically meaningful order, e.g., `delete_file` before `json_remove`.** **`payload.warnings[]` is sorted by `(code, evidence[0])`** so that warning order doesn't depend on filesystem walk order. **`payload.steps[].operations[*].commit_paths` order is fixed; per-step `commit_paths[]` is sorted alphabetically.** Together these rules make the full `payload` byte-stable across runs and hosts (a tested CI contract, not a vague aspiration).
 
 1. `displace-tools` — one step per displaced tool.
 2. `set-package-manager` — one step. Sets `package.json:packageManager`, deletes non-pnpm lockfiles.
-3. `apply-shared-overlay` — **one step per top-level group** (rev-3 enumeration; categorization rule = top-level path under `_shared/` after rendering):
+3. `apply-shared-overlay` — **one step per top-level group** (categorization rule = top-level path under `_shared/` after rendering). **The `_shared/.claude/**` subtree is explicitly excluded from the walker for step 3 (and step 4) — it is owned exclusively by step 5 (`merge-claude-kit`).** Without this exclusion a naive walker would create a `.claude` group here and double-write everything in step 5.
    - `dotfiles` (`.editorconfig`, `.gitattributes`, `.gitignore`, `.nvmrc`, `.node-version`, `.env.example`)
    - `root-configs` (`biome.jsonc`, `lefthook.yml`, `commitlint.config.js`, `tsconfig.base.json`, `tsconfig.json`, `vitest.config.ts`)
    - `root-docs` (`AGENTS.md`, `CLAUDE.md`, `README.md`, `LICENSE`, `SECURITY.md`, `CODEOWNERS`)
@@ -246,9 +250,10 @@ Steps are grouped by category. **Within a category, ordering is alphabetical by 
    - `claude-md-snapshot` — rename existing `CLAUDE.md` → `CLAUDE.pre-janus.md`, write janus's `CLAUDE.md`, insert `@CLAUDE.pre-janus.md` as the second line of the new file.
    - `claude-skills-overlay` — overlay-with-replace for `.claude/skills/`.
    - `claude-hooks-overlay` — overlay-with-replace for `.claude/hooks/` (preserves mode 0755).
-   - **`claude-agents-overlay` and `claude-commands-overlay` are not v0.1 steps** — janus ships no files in those directories yet. Future janus versions that add agents/commands trigger the corresponding step on next retrofit.
+   - `claude-misc-overlay` — overlay-with-replace for any non-template top-level files in `_shared/.claude/` that aren't owned by another substep. v0.1 covers `.claude/README.md` and `.claude/reconcile.config.example` (the only such files currently shipped). Implementation: walk `_shared/.claude/` excluding `hooks/`, `skills/`, and any rendered `settings.json` source — everything left is `claude-misc`. Data-driven so future janus additions slot in automatically.
+   - **`claude-agents-overlay` and `claude-commands-overlay` are not v0.1 steps** — janus ships no files in those directories yet. Future janus versions that add agents/commands trigger the corresponding step on next retrofit (the substep enumeration is data-driven, not hardcoded).
    - Each overwrite of a pre-existing user file emits a `WARN_OVERWRITE_USER_KIT` warning in the plan, with the file path.
-6. `install-deps` — **omitted entirely if `archetype === 'monorepo-root'`** (workspace install left to user; documented in plan output). Otherwise: writes the merged `package.json` (already done by `apply-shared-overlay/package-json` — this step just runs `pnpm install` and commits the resulting `pnpm-lock.yaml`). See §9 for failure handling.
+6. `install-deps` — **omitted entirely if `archetype === 'monorepo-root'`** (workspace install left to user; documented in plan output). Otherwise: writes the merged `package.json` (already done by `apply-shared-overlay/package-json` — this step just runs `pnpm install` and commits the resulting `pnpm-lock.yaml`). **Why bare `pnpm install`, not `--lockfile-only` (scaffold.sh's choice):** scaffold.sh produces a fresh project where the user follows up with their own `pnpm install`; retrofit produces a branch the user is about to push and review, so a working install (with `node_modules/`) is more useful for verifying the result locally before pushing. Trade-off: slower step, larger working tree. See §9 for failure handling.
 7. `write-marker` — one step. Writes `.janus.json`.
 
 ### 6.7 Workflow overlay vs. WORKFLOW_REFERENCES_DISPLACED_TOOL warning
@@ -278,14 +283,15 @@ Validated against `src/retrofit/schema/plan.schema.json` at retrofit pre-flight 
     "target_branch": "janus/retrofit",
     "slots": {
       "workload": "foo",
-      "github_org": "pantheon-tech",
-      "author_name": "Daniel Smith",
-      "author_email": "daniel@skipper.kiwi",
       "description": "Foo service",
-      "license": "MIT",
+      "archetype": "backend-functions",
+      "github_org": "pantheon-tech",
+      "author": "Daniel Smith",
+      "author_email": "daniel@skipper.kiwi",
       "node_version": "24",
-      "region": "westus2",
-      "template_version": "0.1.0",
+      "license": "MIT",
+      "region": "australiaeast",
+      "template_version": "v0.1.0",
       "year": "2026",
       "date": "2026-05-04",
       "base_branch": "staging"
@@ -469,7 +475,7 @@ janus retrofit --plan <path> [--branch <name>] [--dry-run]
 janus diagnose v0.1.0 — backend-functions archetype
 
 Plan: 12 steps (3 displace-tools, 4 apply-overlay, 4 merge-claude-kit, 1 install-deps)
-Slots: workload=foo, github_org=pantheon-tech, author=Daniel Smith <daniel@skipper.kiwi>, node=24
+Slots: workload=foo, archetype=backend-functions, github_org=pantheon-tech, author=Daniel Smith <daniel@skipper.kiwi>, node=24, region=australiaeast
 Plugins: frontend-design, playwright
 
 Warnings: 5
@@ -511,6 +517,7 @@ Both subcommands surface in `janus --help`. Existing subcommands (`scaffold`, `b
 - `MODULE_TYPE_CHANGE` test: commonjs fixture; warning surfaces; retrofit proceeds.
 - `commit-msg` hook collision test: fixture has pre-existing commitlint config that disallows `chore:` (artificial — verifies executor surfaces the failure).
 - `pre_state_hash` TOCTOU test: between diagnose and retrofit, modify a `present_differs` file; retrofit must abort with `PRE_STATE_HASH_MISMATCH`.
+- **Step ordering test**: assert `apply-shared-overlay/dotfiles` (which writes `.gitignore`) runs strictly before `install-deps` (which produces `node_modules/`). If the alphabetical ordering rule is later changed, this test surfaces the regression — without `.gitignore` already in place, `install-deps` would trip the `EXTRANEOUS_FILE_MODIFICATIONS` check on `node_modules/.modules.yaml` etc.
 
 **Manual:**
 
