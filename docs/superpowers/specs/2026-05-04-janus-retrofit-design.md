@@ -1,6 +1,6 @@
 # janus retrofit — design
 
-**Status:** draft (rev 8 — addresses code-review iterations 1–7)
+**Status:** draft (rev 9 — addresses code-review iterations 1–8)
 **Date:** 2026-05-04
 **Author:** Daniel (with Claude)
 **Scope:** v0.1 of `janus diagnose` and `janus retrofit` subcommands
@@ -38,6 +38,7 @@ The user has several pre-janus repos and wants a tool that produces a determinis
 - **Symlinks** anywhere in the janus-baseline target paths — diagnose refuses.
 - **Drift detection** for janus-shipped files modified by the user — v0.1 always replaces but emits a warning per overwritten file (SHA-based safeguard in §10).
 - Per-package retrofit inside a monorepo — `monorepo-root` archetype sets up the workspace root only.
+- The `types-package` archetype (which exists at `templates/types-package/` for use by scaffold) — out of scope for v0.1 retrofit. It's a leaf archetype intended to live inside an existing monorepo, where retrofit's "transform a standalone repo" model doesn't apply cleanly. Will be addressed alongside per-package monorepo retrofit in a later version.
 - `.claude/agents/` and `.claude/commands/` overlays — janus ships no files in those directories yet (see §13).
 - Windows support (Linux + macOS only).
 - Concurrent retrofits in the same repo — caller must serialize. Diagnose is read-only and concurrency-safe within a repo, but two diagnose runs writing to the same `--out` path race on the file write (last-writer-wins).
@@ -252,7 +253,7 @@ Plan-builder produces a `PKG_FIELDS_OVERWRITTEN` warning for each affected leaf,
 
 ### 6.6 Steps (each becomes one commit)
 
-Steps are grouped by category. **Within a category, ordering is alphabetical by step `id`** to guarantee determinism. **Within a step, `operations[]` ordering is fixed by the plan-builder per step type (not sorted) — semantically meaningful order, e.g., `delete_file` before `json_remove`.** **`payload.warnings[]` is sorted by `(code, evidence[0], message)`** so that warning order doesn't depend on filesystem walk order; `evidence[0]` falls back to empty string when `evidence` is empty, and `message` breaks ties on identical `(code, evidence[0])`. **`payload.steps[].operations[*].commit_paths` order is fixed; per-step `commit_paths[]` is sorted alphabetically.** Together these rules make the full `payload` byte-stable across runs and hosts (a tested CI contract, not a vague aspiration).
+Steps are grouped by category. **Cross-category ordering is the numeric category order listed below (1 → 7), not alphabetical** — pure-alphabetical would put `set-package-manager` *after* `install-deps` (a real bug: lockfile must be deleted before `pnpm install` runs). **Within a category, ordering is alphabetical by step `id`** to guarantee determinism. **Within a step, `operations[]` ordering is fixed by the plan-builder per step type (not sorted) — semantically meaningful order, e.g., `delete_file` before `json_remove`.** **`payload.warnings[]` is sorted by `(code, evidence[0], message)`** so that warning order doesn't depend on filesystem walk order; `evidence[0]` falls back to empty string when `evidence` is empty, and `message` breaks ties on identical `(code, evidence[0])`. **`payload.steps[].operations[*].commit_paths` order is fixed; per-step `commit_paths[]` is sorted alphabetically.** Together these rules make the full `payload` byte-stable across runs and hosts (a tested CI contract, not a vague aspiration).
 
 1. `displace-tools` — one step per displaced tool.
 
@@ -309,7 +310,8 @@ janus does not read or modify `.git/info/exclude` (per-checkout local ignores). 
 - **`write_file`:** emit only for paths whose `BaselineFileStatus` is `missing` or `present_differs`. `present_identical` paths produce no op.
 - **`gitignore_merge`:** plan-builder computes the would-be merged content (read user's `.gitignore`, splice janus's lines into the delimited block per §7 rules); if the result is byte-identical to the existing file, omit the op. Otherwise emit with `pre_state_hash`.
 - **`claude_settings_merge`:** plan-builder computes the would-be merged JSON (per §8 rules); if the result is byte-identical (canonicalized — sorted keys, normalized whitespace) to the existing `.claude/settings.json`, omit the op. Otherwise emit.
-- **`json_set` / `json_remove` / `json_remove_matching`:** for each op, plan-builder reads the target file at diagnose time and checks whether the op would actually mutate. If not, omit. (e.g., `json_remove` on a missing pointer is omitted; `json_set` on a pointer already at the target value is omitted.)
+- **`json_set` / `json_remove` / `json_remove_matching`:** plan-builder consults the parsed file from the analyzer's `RepoSnapshot` (e.g., `snapshot.package_json`) and checks whether the op would actually mutate. If not, omit. (e.g., `json_remove` on a missing pointer is omitted; `json_set` on a pointer already at the target value is omitted.) v0.1 ops only target `package.json`, which the snapshot already carries; any future op targeting a different JSON file requires enriching `RepoSnapshot` first (snapshot is the source of truth, not the disk).
+- **`json_merge`:** not emitted by v0.1 plan-builder; reserved in the op vocabulary for future use. Per-op omission rule for it is "always emit when called" pending future definition.
 - **`delete_file` / `delete_directory`:** omit if the path is already absent.
 - **`rename_file`:** omit if source absent and destination present (already renamed).
 - **`chmod`:** omit if file already at the target mode.
@@ -582,7 +584,7 @@ Both subcommands surface in `janus --help`. Existing subcommands (`scaffold`, `b
 - `MODULE_TYPE_CHANGE` test: commonjs fixture; warning surfaces; retrofit proceeds.
 - `commit-msg` hook collision test: fixture has pre-existing commitlint config that disallows `chore:` (artificial — verifies executor surfaces the failure).
 - `pre_state_hash` TOCTOU test: between diagnose and retrofit, modify a `present_differs` file; retrofit must abort with `PRE_STATE_HASH_MISMATCH`.
-- **Step ordering test**: assert `apply-shared-overlay/root-dotfiles` (which writes `.gitignore`) runs strictly before `install-deps` (which produces `node_modules/`). If the alphabetical ordering rule is later changed, this test surfaces the regression — without `.gitignore` already in place, `install-deps` would trip the `EXTRANEOUS_FILE_MODIFICATIONS` check on `node_modules/.modules.yaml` etc.
+- **Step ordering test**: assert two cross-step orderings, both load-bearing — (a) `apply-shared-overlay/root-dotfiles` (which writes `.gitignore`) runs strictly before `install-deps` (which produces `node_modules/`); without `.gitignore` already in place, `install-deps` would trip the `EXTRANEOUS_FILE_MODIFICATIONS` check on `node_modules/.modules.yaml`. (b) `set-package-manager` (which deletes non-pnpm lockfiles) runs strictly before `install-deps`; without lockfile cleanup first, `pnpm install` would either fight the npm/yarn lockfile or fail to migrate cleanly. If the category-then-alphabetical ordering rule is later changed, both assertions surface the regression.
 
 **Manual:**
 
