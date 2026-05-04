@@ -1,6 +1,6 @@
 # janus retrofit — design
 
-**Status:** draft (rev 7 — addresses code-review iterations 1 + 2 + 3 + 4 + 5 + 6)
+**Status:** draft (rev 8 — addresses code-review iterations 1–7)
 **Date:** 2026-05-04
 **Author:** Daniel (with Claude)
 **Scope:** v0.1 of `janus diagnose` and `janus retrofit` subcommands
@@ -252,7 +252,7 @@ Plan-builder produces a `PKG_FIELDS_OVERWRITTEN` warning for each affected leaf,
 
 ### 6.6 Steps (each becomes one commit)
 
-Steps are grouped by category. **Within a category, ordering is alphabetical by step `id`** to guarantee determinism. **Within a step, `operations[]` ordering is fixed by the plan-builder per step type (not sorted) — semantically meaningful order, e.g., `delete_file` before `json_remove`.** **`payload.warnings[]` is sorted by `(code, evidence[0])`** so that warning order doesn't depend on filesystem walk order. **`payload.steps[].operations[*].commit_paths` order is fixed; per-step `commit_paths[]` is sorted alphabetically.** Together these rules make the full `payload` byte-stable across runs and hosts (a tested CI contract, not a vague aspiration).
+Steps are grouped by category. **Within a category, ordering is alphabetical by step `id`** to guarantee determinism. **Within a step, `operations[]` ordering is fixed by the plan-builder per step type (not sorted) — semantically meaningful order, e.g., `delete_file` before `json_remove`.** **`payload.warnings[]` is sorted by `(code, evidence[0], message)`** so that warning order doesn't depend on filesystem walk order; `evidence[0]` falls back to empty string when `evidence` is empty, and `message` breaks ties on identical `(code, evidence[0])`. **`payload.steps[].operations[*].commit_paths` order is fixed; per-step `commit_paths[]` is sorted alphabetically.** Together these rules make the full `payload` byte-stable across runs and hosts (a tested CI contract, not a vague aspiration).
 
 1. `displace-tools` — one step per displaced tool.
 
@@ -267,9 +267,9 @@ Steps are grouped by category. **Within a category, ordering is alphabetical by 
    Why ops 4 and 5: modern husky sets `core.hooksPath = .husky/_` and seeds `.git/hooks/<event>` shim files that delegate into `.husky/`. Deleting `.husky/` alone leaves an orphaned config pointing nowhere and orphan shims. lefthook's later install (via the `prepare` script in step 6) needs both cleared to install cleanly.
 
    Other `displace-*` steps are conventional `delete_file` / `json_remove` sequences with no `.git/`-side cleanup needed.
-2. `set-package-manager` — one step. Sets `package.json:packageManager`, deletes non-pnpm lockfiles.
+2. `set-package-manager` — one step. **Operations are limited to deleting non-pnpm lockfiles** (`package-lock.json`, `yarn.lock`). The `package.json:packageManager` field is set later by `apply-shared-overlay/root-configs` via the rendered overlay tree (the user-side jq merge in §6 step 4 produces a `package.json` with janus's `packageManager`). Step is omitted entirely if the repo is already on pnpm with no other lockfiles present.
 3. `apply-shared-overlay` — **one step per top-level group**. The categorization rule is **data-driven** (not hardcoded): walk the rendered overlay tree, and for each entry the group is the entry's first path segment. Files at the repo root (no first segment that is a directory) are grouped under the synthetic name `root`. **The `_shared/.claude/**` subtree is explicitly excluded from the walker for step 3 (and step 4) — it is owned exclusively by step 5 (`merge-claude-kit`).** Without this exclusion a naive walker would create a `.claude` group here and double-write everything in step 5. The list below is **illustrative for the present-day `_shared/` tree, not normative** — future janus additions slot in automatically:
-   - `root` — files with no directory prefix, partitioned for review-friendliness into three commits via stable id suffix (so alphabetical step ordering still works): `root-dotfiles` (`.editorconfig`, `.gitattributes`, `.gitignore`, `.nvmrc`, `.node-version`, `.env.example`), `root-configs` (`biome.jsonc`, `lefthook.yml`, `commitlint.config.js`, `tsconfig.base.json`, `tsconfig.json`, `vitest.config.ts`, `package.json`), `root-docs` (`AGENTS.md`, `CLAUDE.md`, `README.md`, `LICENSE`, `SECURITY.md`, `CODEOWNERS`). The split is plan-builder logic over the `root` group, not a separate categorization rule.
+   - `root` — files with no directory prefix, partitioned for review-friendliness into three commits via stable id suffix (so alphabetical step ordering still works): `root-dotfiles` (`.editorconfig`, `.gitattributes`, `.gitignore`, `.nvmrc`, `.node-version`, `.env.example`), `root-configs` (`biome.jsonc`, `lefthook.yml`, `commitlint.config.js`, `tsconfig.base.json`, `tsconfig.json`, `vitest.config.ts`, `package.json`), `root-docs` (`AGENTS.md`, `CLAUDE.md`, `README.md`, `LICENSE`, `SECURITY.md`, `CODEOWNERS`). The split is plan-builder logic over the `root` group, not a separate categorization rule. **Attachment of overlay-tree-excluded ops:** `gitignore_merge` (and any future op that is excluded from the overlay tree by §6 step 1's special-case logic) is attached to whichever step would have contained its target file's `write_file` op — for `.gitignore`, that's `root-dotfiles` per the partition above.
    - `infra` (everything under `infra/` if not excluded by archetype)
    - `.github` (everything under `.github/` — workflows, dependabot, issue templates, PR templates, prompts/)
    - `docs` (everything under `docs/` — `conventions/`, `architecture.md`, `adr/`, `plans/`, `runbooks/`)
@@ -285,7 +285,7 @@ Steps are grouped by category. **Within a category, ordering is alphabetical by 
    - `claude-misc-overlay` — overlay-with-replace for any non-template top-level files in `_shared/.claude/` that aren't owned by another substep. v0.1 covers `.claude/README.md` and `.claude/reconcile.config.example` (the only such files currently shipped). Implementation: walk `_shared/.claude/` excluding `hooks/`, `skills/`, and any rendered `settings.json` source — everything left is `claude-misc`. Data-driven so future janus additions slot in automatically.
    - **`claude-agents-overlay` and `claude-commands-overlay` are not v0.1 steps** — janus ships no files in those directories yet. Future janus versions that add agents/commands trigger the corresponding step on next retrofit (the substep enumeration is data-driven, not hardcoded).
    - Each overwrite of a pre-existing user file emits a `WARN_OVERWRITE_USER_KIT` warning in the plan, with the file path.
-6. `install-deps` — **omitted entirely if `archetype === 'monorepo-root'`** (workspace install left to user; documented in plan output). Otherwise: writes the merged `package.json` (already done by `apply-shared-overlay/package-json` — this step just runs `pnpm install` and commits the resulting `pnpm-lock.yaml`). **`commit_paths` is exactly `["pnpm-lock.yaml"]`.** This depends on `.gitignore` already covering `node_modules/`; that's why `apply-shared-overlay/dotfiles` (which writes `.gitignore`) MUST run before `install-deps` — enforced by alphabetical step ordering and verified by the test in §12. **Why bare `pnpm install`, not `--lockfile-only` (scaffold.sh's choice):** scaffold.sh produces a fresh project where the user follows up with their own `pnpm install`; retrofit produces a branch the user is about to push and review, so a working install (with `node_modules/`) is more useful for verifying the result locally before pushing. Trade-off: slower step, larger working tree. See §9 for failure handling.
+6. `install-deps` — **omitted entirely if `archetype === 'monorepo-root'`** (workspace install left to user; documented in plan output). Otherwise: writes the merged `package.json` (already done by `apply-shared-overlay/root-configs` — this step just runs `pnpm install` and commits the resulting `pnpm-lock.yaml`). **`commit_paths` is exactly `["pnpm-lock.yaml"]`.** This depends on `.gitignore` already covering `node_modules/`; that's why `apply-shared-overlay/root-dotfiles` (which writes `.gitignore`) MUST run before `install-deps` — enforced by alphabetical step ordering and verified by the test in §12. **Why bare `pnpm install`, not `--lockfile-only` (scaffold.sh's choice):** scaffold.sh produces a fresh project where the user follows up with their own `pnpm install`; retrofit produces a branch the user is about to push and review, so a working install (with `node_modules/`) is more useful for verifying the result locally before pushing. Trade-off: slower step, larger working tree. See §9 for failure handling.
 7. `write-marker` — one step. Writes `.janus.json`.
 
 ### 6.6.5 Archetype-overlay vs displaced-tools rule
@@ -294,7 +294,7 @@ Steps are grouped by category. **Within a category, ordering is alphabetical by 
 
 ### 6.7 Workflow overlay vs. WORKFLOW_REFERENCES_DISPLACED_TOOL warning
 
-The `apply-shared-overlay/github` step ships janus's named workflow files (e.g., `.github/workflows/ci.yml.tmpl`, `deploy.yml.tmpl`, `infra-preview.yml.tmpl`, `claude-autofix.yml.tmpl`). On collision (user has a same-named file), the overlay-with-replace policy applies: janus wins, `WARN_OVERWRITE_USER_KIT` is emitted.
+The `apply-shared-overlay/.github` step ships janus's named workflow files (group ids preserve the leading-dot of the source directory; the data-driven first-segment rule does not strip dot-prefixes) (e.g., `.github/workflows/ci.yml.tmpl`, `deploy.yml.tmpl`, `infra-preview.yml.tmpl`, `claude-autofix.yml.tmpl`). On collision (user has a same-named file), the overlay-with-replace policy applies: janus wins, `WARN_OVERWRITE_USER_KIT` is emitted.
 
 **`WORKFLOW_REFERENCES_DISPLACED_TOOL` warnings** apply to **user-authored, non-janus-named** workflows that reference displaced tools (e.g., the user has `.github/workflows/qa.yml` running `npm ci && eslint`). v0.1 does not modify these — only warns. The user fixes by hand post-retrofit.
 
@@ -302,14 +302,26 @@ The `apply-shared-overlay/github` step ships janus's named workflow files (e.g.,
 
 janus does not read or modify `.git/info/exclude` (per-checkout local ignores). Users who use it should be aware: retrofitted files matched by `.git/info/exclude` will appear ignored to git but visible to the executor's overlay tree, with no special handling. v0.1 makes no attempt to merge into or warn about it.
 
-### 6.8 Idempotency on re-run — per-file omission rule
+### 6.8 Idempotency on re-run — per-op omission rule
 
-**Granularity is per-file, not per-step.** Plan-builder iterates the rendered overlay tree and emits a `write_file` op only for paths whose `BaselineFileStatus` is `missing` or `present_differs`. Paths classified as `present_identical` produce no operation at all — they're invisible to the executor. As a consequence:
+**Granularity is per-op, not per-step.** For each kind of op, plan-builder applies a "would this op produce any change?" check at diagnose time and omits the op entirely when the answer is no:
 
-- An `apply-shared-overlay/<group>` step containing only identical files is emitted with **zero `write_file` ops**. Plan-builder may still emit such a step (for traceability) with an empty `operations` array, OR omit it entirely. v0.1 omits empty steps from `payload.steps[]`.
-- A category-level shortcut (e.g., "repo already on pnpm" → skip the entire `set-package-manager` step) applies when *all* of that step's preconditions evaluate to no-op. Same outcome: step omitted from `payload.steps[]`.
+- **`write_file`:** emit only for paths whose `BaselineFileStatus` is `missing` or `present_differs`. `present_identical` paths produce no op.
+- **`gitignore_merge`:** plan-builder computes the would-be merged content (read user's `.gitignore`, splice janus's lines into the delimited block per §7 rules); if the result is byte-identical to the existing file, omit the op. Otherwise emit with `pre_state_hash`.
+- **`claude_settings_merge`:** plan-builder computes the would-be merged JSON (per §8 rules); if the result is byte-identical (canonicalized — sorted keys, normalized whitespace) to the existing `.claude/settings.json`, omit the op. Otherwise emit.
+- **`json_set` / `json_remove` / `json_remove_matching`:** for each op, plan-builder reads the target file at diagnose time and checks whether the op would actually mutate. If not, omit. (e.g., `json_remove` on a missing pointer is omitted; `json_set` on a pointer already at the target value is omitted.)
+- **`delete_file` / `delete_directory`:** omit if the path is already absent.
+- **`rename_file`:** omit if source absent and destination present (already renamed).
+- **`chmod`:** omit if file already at the target mode.
+- **`shell` (whitelist entries (a) `pnpm install`, (b) `pnpm dedupe`):** non-omittable — always emitted when the parent step is present, since their effect (lockfile state, dep graph) is hard to predict from snapshot alone.
+- **`shell` (whitelist entries (c) and (d) — husky cleanup):** emit only if `displace-husky` is in the plan (i.e., husky was detected). Already covered by step-level inclusion logic.
 
-Diagnose against an already-retrofitted repo produces a plan with very few or zero steps. Re-running retrofit then produces a no-op branch (or, if the plan has zero steps, exits with a clear message before creating any commits).
+**Step-level consequences:**
+
+- A step whose op list becomes empty after per-op omission is **dropped from `payload.steps[]`** entirely. v0.1 does not emit empty steps.
+- The executor therefore never encounters a no-op step; "nothing to commit" cannot occur from omission. (Belt-and-braces: if a logic bug causes an empty step to slip through, the executor treats `git status --porcelain` empty after staging as success — `git commit --allow-empty` is **NOT** used; instead the step is recorded as `committed_empty: skipped` in the run report and execution continues.)
+
+Diagnose against an already-retrofitted repo produces a plan with very few or zero steps. Re-running retrofit on a zero-step plan: pre-flight passes (the `.janus.json` marker still gets written, in a single commit); exits 0 with summary "no changes needed."
 
 ## 7. Plan JSON schema
 
@@ -395,7 +407,7 @@ Validated against `src/retrofit/schema/plan.schema.json` at retrofit pre-flight 
 | `json_remove`            | Remove JSON pointer. No-op if missing.                                          |
 | `json_remove_matching`   | Remove keys under `pointer` whose **value matches `value_regex`**, OR (alternative form) keys whose **name matches `key_regex`**. Op accepts exactly one of `value_regex` / `key_regex`. **Regex flavor: ECMA (JavaScript `RegExp`)**, case-sensitive, not auto-anchored — the implementer wraps with `^...$` if anchoring is intended. Specified to remove the "which regex dialect" decision from the implementer.|
 | `json_merge`             | Deep-merge object into pointer location. **Additive only**: object recursion, no scalar overwrite, no array overwrite. (This op is distinct from the jq `*` semantics used internally by plan-builder for `package.json.tmpl` merging — that's not exposed as an op.) |
-| `claude_settings_merge`  | Specialized: per-field merge of `.claude/settings.json` (see §8). Carries `additions: { permissions, hooks, enabledPlugins, scalars }`. |
+| `claude_settings_merge`  | Specialized: per-field merge of `.claude/settings.json` (see §8). Carries `additions: { permissions, hooks, enabledPlugins, scalars }`. Optional: `pre_state_hash` (sha256 of user's existing `.claude/settings.json` at diagnose time; executor verifies and aborts with `PRE_STATE_HASH_MISMATCH` on drift, mirroring `write_file` and `gitignore_merge`). Plan-builder MUST emit `pre_state_hash` whenever the user has a pre-existing `.claude/settings.json`. |
 | `gitignore_merge`        | Specialized: append-or-replace janus's lines inside a delimited block in `.gitignore`. Required: `lines: string[]` (order is fixed by plan-builder — same order as appears in janus's `_shared/.gitignore` source — and is part of the determinism contract). Optional: `pre_state_hash` (sha256 of the user's existing `.gitignore` at diagnose time; executor verifies and aborts with `PRE_STATE_HASH_MISMATCH` on drift, mirroring `write_file`). Block markers fixed: `# --- janus baseline (managed by janus retrofit; do not edit) ---` / `# --- end janus baseline ---`. Idempotent: replaces block body if both markers found in order, otherwise appends with one blank line separator. **Malformed-marker handling:** if exactly one of the two markers is present, OR markers appear in reverse order, OR markers appear more than once, abort step with `GITIGNORE_BLOCK_MALFORMED` and instruct the user to clean up by hand. Preserves all user content outside the block. Used only when target `.gitignore` already exists; if absent, plan-builder emits a plain `write_file` op instead. |
 | `shell`                  | Run a whitelisted command. **Whitelist (closed, with per-entry behavior flags):** (a) `pnpm install` — must succeed; (b) `pnpm dedupe` — must succeed; (c) `git config --unset core.hooksPath` — exit code ignored (no-op if key absent); (d) `find .git/hooks -type f -not -name "*.sample" -delete` — exit code ignored (no-op if dir empty). The four entries above are the **only** strings the executor will accept (no argv variations). **`commit_paths` field is required at the step level** — executor stages only those paths after the command runs; any other modified files trigger `EXTRANEOUS_FILE_MODIFICATIONS`. (`git config` and `find` operate on `.git/`, which git itself doesn't track, so they produce no `commit_paths`.) Executor refuses any `shell` op whose `command` is not on the whitelist, even if the JSON parses. |
 
@@ -442,7 +454,7 @@ Loop over plan steps. Per step:
 1. Evaluate `preconditions`. If any fail, **skip the step** (record as `skipped`).
 2. For each operation with `pre_state_hash`: read file, compute SHA-256, abort step if mismatch (`PRE_STATE_HASH_MISMATCH`).
 3. Execute operations in order. Each op fully applied or throws.
-4. Compute actual modified paths via `git status --porcelain` (which already filters per `.gitignore`); compare against `step.commit_paths`. Any extra path → abort `EXTRANEOUS_FILE_MODIFICATIONS`. **Ops that touch `.git/` (`shell` whitelist entries (c) and (d) — `git config --unset core.hooksPath`, `find .git/hooks ...`) are exempt from the check by definition: git doesn't track `.git/`, so `git status` cannot see them. Ops that touch `node_modules/` rely on `.gitignore` (already in place from the earlier `apply-shared-overlay/dotfiles` step) to keep `git status` clean.**
+4. Compute actual modified paths via `git status --porcelain` (which already filters per `.gitignore`); compare against `step.commit_paths`. Any extra path → abort `EXTRANEOUS_FILE_MODIFICATIONS`. **Ops that touch `.git/` (`shell` whitelist entries (c) and (d) — `git config --unset core.hooksPath`, `find .git/hooks ...`) are exempt from the check by definition: git doesn't track `.git/`, so `git status` cannot see them. Ops that touch `node_modules/` rely on `.gitignore` (already in place from the earlier `apply-shared-overlay/root-dotfiles` step) to keep `git status` clean.**
 5. `git add` the paths in `commit_paths`, then `git commit -m <step.commit_message>`. **No `--no-verify`.** If a commit-msg hook fails, abort and print the hook output.
 
 **On abort:**
@@ -452,7 +464,7 @@ Loop over plan steps. Per step:
 
 **`pnpm install` failure (`install-deps` step):**
 
-- The `package.json` write happens in `apply-shared-overlay/package-json` (already committed). The `install-deps` step's commit (which contains `pnpm-lock.yaml` and any side effects) hasn't been made when `pnpm install` fails.
+- The `package.json` write happens in `apply-shared-overlay/root-configs` (already committed). The `install-deps` step's commit (which contains `pnpm-lock.yaml` and any side effects) hasn't been made when `pnpm install` fails.
 - Executor aborts; lockfile and `node_modules/` may be left dirty in the working tree.
 - User options: fix underlying issue (peer dep, registry auth, network) and re-run retrofit on a fresh `--branch` (idempotency skips already-applied steps); or `git reset --hard` + clean `node_modules/` to discard.
 - `INSTALL_DEPS_MAY_FAIL` warning emitted in plan whenever the step is present.
@@ -570,7 +582,7 @@ Both subcommands surface in `janus --help`. Existing subcommands (`scaffold`, `b
 - `MODULE_TYPE_CHANGE` test: commonjs fixture; warning surfaces; retrofit proceeds.
 - `commit-msg` hook collision test: fixture has pre-existing commitlint config that disallows `chore:` (artificial — verifies executor surfaces the failure).
 - `pre_state_hash` TOCTOU test: between diagnose and retrofit, modify a `present_differs` file; retrofit must abort with `PRE_STATE_HASH_MISMATCH`.
-- **Step ordering test**: assert `apply-shared-overlay/dotfiles` (which writes `.gitignore`) runs strictly before `install-deps` (which produces `node_modules/`). If the alphabetical ordering rule is later changed, this test surfaces the regression — without `.gitignore` already in place, `install-deps` would trip the `EXTRANEOUS_FILE_MODIFICATIONS` check on `node_modules/.modules.yaml` etc.
+- **Step ordering test**: assert `apply-shared-overlay/root-dotfiles` (which writes `.gitignore`) runs strictly before `install-deps` (which produces `node_modules/`). If the alphabetical ordering rule is later changed, this test surfaces the regression — without `.gitignore` already in place, `install-deps` would trip the `EXTRANEOUS_FILE_MODIFICATIONS` check on `node_modules/.modules.yaml` etc.
 
 **Manual:**
 
