@@ -1,6 +1,6 @@
 # janus retrofit — design
 
-**Status:** draft (rev 4 — addresses code-review iterations 1 + 2 + 3)
+**Status:** draft (rev 5 — addresses code-review iterations 1 + 2 + 3 + 4)
 **Date:** 2026-05-04
 **Author:** Daniel (with Claude)
 **Scope:** v0.1 of `janus diagnose` and `janus retrofit` subcommands
@@ -69,7 +69,7 @@ The split makes each module independently testable.
 3. If `.janus.json` exists, it parses and validates against `marker.schema.json`; `schema_version` is recognised.
 4. Required tools available: `git`, `jq`, `node`, plus `mo` (vendored).
 5. **No git submodules** (`git submodule status` empty).
-6. **No symlinks** within paths the chosen archetype's overlay would touch (`find <target_paths> -type l`).
+6. **No symlinks** within paths the chosen archetype's overlay would touch (`find <target_paths> -type l`). **Timing note:** computing the target-path set requires running the analyzer + plan-builder's overlay-tree computation first; pre-flight #6 therefore runs *after* those analyses produce the in-memory overlay tree (per §3 the overlay tree is in-memory and not gated by pre-flight). Implementation order: parsed args → analyzer → slot/plugin resolution → overlay-tree computation → checks #6 and #7 → plan emission.
 7. **No case-insensitive collisions** between existing files and janus baseline targets.
 8. If `--archetype monorepo-root`: search ancestors of `pwd` for a `pnpm-workspace.yaml`. If one is found AND its directory differs from `git rev-parse --show-toplevel`, refuse with `INVOKED_FROM_WORKSPACE_MEMBER`: user has invoked diagnose from inside a workspace member, not the root. (If no `pnpm-workspace.yaml` exists anywhere, the check is a no-op — diagnose proceeds and the resulting plan creates the workspace from scratch.)
 
@@ -80,7 +80,7 @@ The split makes each module independently testable.
 11. Plan's `repo_root` matches current `git rev-parse --show-toplevel`.
 12. Working tree clean: `git status --porcelain` empty, **excluding the `--plan` path itself** (which is expected to be present and untracked or modified).
 13. HEAD is on a tracking branch (not detached).
-14. The **target branch** (default `janus/retrofit`, overridable with `--branch <name>`) does not exist locally or on `origin`. If default is taken and `--branch` is not supplied, search `janus/retrofit-2` … `janus/retrofit-99` for the first free name; print it as a suggestion and exit. If all 99 are taken, exit with `BRANCH_SUGGESTION_EXHAUSTED`.
+14. The **target branch** (default `janus/retrofit`, overridable with `--branch <name>`) does not exist locally or on `origin`. The remote check uses `git ls-remote --heads origin <branch>` (network call). If `origin` is unreachable (offline / auth failure), exit with `REMOTE_UNREACHABLE` — the user can re-run with `--no-remote-check` (a flag added to §11) to fall back to local-only verification, accepting the risk of a remote collision discovered at push time. If default is taken and `--branch` is not supplied, search `janus/retrofit-2` … `janus/retrofit-99` for the first free name; **print the suggested name and exit (soft failure with remediation)** — the explicit-opt-in via `--branch <suggested-name>` keeps the destructive operation deliberately under user control. If all 99 are taken, exit with `BRANCH_SUGGESTION_EXHAUSTED`.
 15. Required tools for execution: as in diagnose, plus `pnpm`.
 
 Any failure aborts with a specific error message and a suggested remediation. None of the pre-flight checks modify state.
@@ -143,7 +143,7 @@ type BaselineFileStatus = {
 1. **Prior `.janus.json:slots`** — frictionless re-runs.
 2. **Auto-source from snapshot:**
    - `github_org`, `workload` ← parsed from `RepoSnapshot.remote.parsed`
-   - `author`, `author_email` ← `package.json:author` (string parse, splits on `<...>`) or `git config user.name`/`user.email`
+   - `author`, `author_email` ← `package.json:author`, with both shapes supported: if object form `{ "name": "X", "email": "y@z" }`, read `.name` → `author` and `.email` → `author_email` directly. If string form `"X <y@z>"`, split on the angle brackets. If `package.json:author` is missing/empty/unparseable, fall through to `git config user.name`/`user.email`. If both `git config` keys are also empty/unset, treat as unresolved (→ prompt, or fail under `--non-interactive`).
    - `description` ← `package.json:description` (treats empty string as unresolved → falls through)
    - `node_version` ← `.nvmrc` (raw) or `package.json:engines.node` (parsed: leading integer extracted from range expressions like `>=24`, `^20.0.0`, `24.x`, `24.5.0` → `24`); if no leading integer, treat as unresolved
    - `archetype` ← passed in via `--archetype` flag (always present; not auto-sourced from repo)
@@ -165,7 +165,18 @@ type BaselineFileStatus = {
 | `author_email`| Standard email regex                        |
 | `node_version`| Resolved value must be a major version integer (e.g., `20`, `22`, `24`) **after normalization** in step 2 above. Range expressions like `>=24` or `^20.0.0` are normalized to their leading integer before validation. |
 
-Auto-sourced values that fail validation cause the slot-resolver to fall back to **prompt** (treating the auto-sourced value as absent) so the user can correct. Prompt-supplied values that fail validation re-prompt. `--slot` flag values that fail validation cause `SLOT_VALIDATION_FAILED` exit.
+Auto-sourced values that fail validation cause the slot-resolver to fall back to **prompt** (treating the auto-sourced value as absent) so the user can correct. Prompt-supplied values that fail validation re-prompt. `--slot` flag values that fail validation cause `SLOT_VALIDATION_FAILED` exit (exit code 1).
+
+**Under `--non-interactive`** (CLI flag in §11), no prompts are issued. Resolution behavior:
+
+| Situation under `--non-interactive`                                         | Result                                            |
+| --------------------------------------------------------------------------- | ------------------------------------------------- |
+| All required slots resolved through steps 1, 2, or 4 with valid values      | Proceed                                           |
+| Required slot has no source (1, 2, 4 all empty) — would normally prompt     | Exit 1, `SLOT_UNRESOLVED_NON_INTERACTIVE`         |
+| Auto-sourced value fails validation — would normally fall back to prompt    | Exit 1, `SLOT_UNRESOLVED_NON_INTERACTIVE` (treats fall-back-to-prompt as a non-interactive failure mode) |
+| `--slot` flag value fails validation                                        | Exit 1, `SLOT_VALIDATION_FAILED` (same as interactive) |
+
+This makes CI/test runs fail fast and predictably regardless of the source of the slot value.
 
 **Persistence:** resolved `SlotMap` is persisted in both the plan JSON and `.janus.json`.
 
@@ -214,9 +225,9 @@ Algorithm (matches scaffold.sh lines 230–325):
 4. **User-side `package.json` merge for retrofit** (this step is retrofit-specific; scaffold.sh has no user-side input): if the user's repo has an existing `package.json`, jq-deep-merge `{user_pkg} * {janus_rendered_pkg}` → `final_pkg`. Same merge operator (`*`); janus wins on key collisions. The `final_pkg` becomes the overlay-tree content for `package.json`. If the repo has no `package.json`, use `janus_rendered_pkg` directly.
 5. **`.claude/settings.json`** is *not* in the overlay tree — it's constructed by the `claude_settings_merge` op at execution time using snapshot data. The op's "additions" payload is computed by plan-builder using the same `SETTINGS_BASE` jq construction as scaffold.sh lines 354–426 (with `pluginSet` plugged into `enabledPlugins`).
 
-### 6.5 What jq-merge clobbers in user `package.json` (rev-3 addition)
+### 6.5 What jq-merge clobbers in user `package.json`
 
-jq's `*` is recursive object merge with leaf overwrite for scalars and arrays. In retrofit, `janus_rendered_pkg * user_pkg`... wait — order matters. We do `user * janus`, so **janus wins on every leaf key it sets**. Concretely, the user loses:
+jq's `*` is recursive object merge with leaf overwrite for scalars and arrays. Plan-builder applies the merge as `jq -s '.[0] * .[1]' user_pkg.json janus_rendered_pkg.json` — **right operand wins at leaf positions**, so janus wins on every key it sets. Concretely, the user loses:
 
 - **`scripts.<key>`** for any key janus sets (typically: `lint`, `format`, `check`, `build`, `test`, `dev`, `deploy:staging`, `deploy:prod`, `prepare`). Intentional — this is the tool migration. User's *additional* scripts (keys janus doesn't touch) survive.
 - **`type`** — janus sets `"module"`. If the user is on CommonJS, this breaks `require()`. Plan-builder emits `MODULE_TYPE_CHANGE` warning when user has `type: "commonjs"` or no `type` field; warning is loud and the user must either accept or hand-edit the plan to remove the `package.json` step. **No automatic refusal in v0.1** — the warning is the safeguard.
@@ -232,7 +243,7 @@ Plan-builder produces a `PKG_FIELDS_OVERWRITTEN` warning for each affected leaf,
 
 Steps are grouped by category. **Within a category, ordering is alphabetical by step `id`** to guarantee determinism. **Within a step, `operations[]` ordering is fixed by the plan-builder per step type (not sorted) — semantically meaningful order, e.g., `delete_file` before `json_remove`.** **`payload.warnings[]` is sorted by `(code, evidence[0])`** so that warning order doesn't depend on filesystem walk order. **`payload.steps[].operations[*].commit_paths` order is fixed; per-step `commit_paths[]` is sorted alphabetically.** Together these rules make the full `payload` byte-stable across runs and hosts (a tested CI contract, not a vague aspiration).
 
-1. `displace-tools` — one step per displaced tool.
+1. `displace-tools` — one step per displaced tool. **`displace-husky` is special:** husky installs shim files into `.git/hooks/<event>` and (modern husky) sets `git config core.hooksPath = .husky/_`. Deleting `.husky/` alone leaves orphaned shims and a config pointing nowhere; lefthook's later install (via the `prepare` script in §6.6 step 6) will then either fail to overwrite or install into a hook directory git ignores. The `displace-husky` step's operations are therefore: `delete_directory` `.husky/`, `json_remove` `package.json:devDependencies.husky`, `json_remove` `package.json:scripts.prepare` (if it references husky), `shell` `git config --unset core.hooksPath`, `shell` `find .git/hooks -type f -not -name "*.sample" -delete`. The two shell ops are tolerated as no-ops if the config key isn't set or the dir is empty (executor uses `|| true` in the wrapper for these specific entries — documented in the whitelist row in §7).
 2. `set-package-manager` — one step. Sets `package.json:packageManager`, deletes non-pnpm lockfiles.
 3. `apply-shared-overlay` — **one step per top-level group** (categorization rule = top-level path under `_shared/` after rendering). **The `_shared/.claude/**` subtree is explicitly excluded from the walker for step 3 (and step 4) — it is owned exclusively by step 5 (`merge-claude-kit`).** Without this exclusion a naive walker would create a `.claude` group here and double-write everything in step 5.
    - `dotfiles` (`.editorconfig`, `.gitattributes`, `.gitignore`, `.nvmrc`, `.node-version`, `.env.example`)
@@ -253,8 +264,12 @@ Steps are grouped by category. **Within a category, ordering is alphabetical by 
    - `claude-misc-overlay` — overlay-with-replace for any non-template top-level files in `_shared/.claude/` that aren't owned by another substep. v0.1 covers `.claude/README.md` and `.claude/reconcile.config.example` (the only such files currently shipped). Implementation: walk `_shared/.claude/` excluding `hooks/`, `skills/`, and any rendered `settings.json` source — everything left is `claude-misc`. Data-driven so future janus additions slot in automatically.
    - **`claude-agents-overlay` and `claude-commands-overlay` are not v0.1 steps** — janus ships no files in those directories yet. Future janus versions that add agents/commands trigger the corresponding step on next retrofit (the substep enumeration is data-driven, not hardcoded).
    - Each overwrite of a pre-existing user file emits a `WARN_OVERWRITE_USER_KIT` warning in the plan, with the file path.
-6. `install-deps` — **omitted entirely if `archetype === 'monorepo-root'`** (workspace install left to user; documented in plan output). Otherwise: writes the merged `package.json` (already done by `apply-shared-overlay/package-json` — this step just runs `pnpm install` and commits the resulting `pnpm-lock.yaml`). **Why bare `pnpm install`, not `--lockfile-only` (scaffold.sh's choice):** scaffold.sh produces a fresh project where the user follows up with their own `pnpm install`; retrofit produces a branch the user is about to push and review, so a working install (with `node_modules/`) is more useful for verifying the result locally before pushing. Trade-off: slower step, larger working tree. See §9 for failure handling.
+6. `install-deps` — **omitted entirely if `archetype === 'monorepo-root'`** (workspace install left to user; documented in plan output). Otherwise: writes the merged `package.json` (already done by `apply-shared-overlay/package-json` — this step just runs `pnpm install` and commits the resulting `pnpm-lock.yaml`). **`commit_paths` is exactly `["pnpm-lock.yaml"]`.** This depends on `.gitignore` already covering `node_modules/`; that's why `apply-shared-overlay/dotfiles` (which writes `.gitignore`) MUST run before `install-deps` — enforced by alphabetical step ordering and verified by the test in §12. **Why bare `pnpm install`, not `--lockfile-only` (scaffold.sh's choice):** scaffold.sh produces a fresh project where the user follows up with their own `pnpm install`; retrofit produces a branch the user is about to push and review, so a working install (with `node_modules/`) is more useful for verifying the result locally before pushing. Trade-off: slower step, larger working tree. See §9 for failure handling.
 7. `write-marker` — one step. Writes `.janus.json`.
+
+### 6.6.5 Archetype-overlay vs displaced-tools rule
+
+**Archetype overlay files MUST NOT be in the displaced-tools allowlist.** If a future archetype shipped an `.eslintrc.json`, the `displace-eslint` step would delete it and the `apply-archetype-overlay` step would recreate it — a noisy and incoherent commit pair. v0.1 archetypes don't trip this rule (none ship lint/format configs of their own), but the constraint is normative for future archetypes.
 
 ### 6.7 Workflow overlay vs. WORKFLOW_REFERENCES_DISPLACED_TOOL warning
 
@@ -341,17 +356,17 @@ Validated against `src/retrofit/schema/plan.schema.json` at retrofit pre-flight 
 
 | Op                       | Meaning                                                                         |
 | ------------------------ | ------------------------------------------------------------------------------- |
-| `write_file`             | Write file. Required: `path`, `content`. Optional: `mode` (octal int, default `0o644`), `pre_state_hash` (executor verifies if path exists; aborts on mismatch — closes TOCTOU window), `overwrite: true` (default false; required if file exists). |
+| `write_file`             | Write file. Required: `path`, `content`. Optional: `mode` (octal int, default `0o644`), `pre_state_hash` (executor verifies if path exists; aborts on mismatch — closes TOCTOU window), `overwrite: true` (default false; required if file exists). **Plan-builder MUST emit `pre_state_hash` AND `overwrite: true` on every `write_file` op whose `path` was `present_identical` or `present_differs` in the snapshot.** Skipping `pre_state_hash` on `present_identical` overlays would open a TOCTOU window between diagnose and retrofit. |
 | `delete_file`            | Delete file. Optional: `pre_state_hash`. **If `pre_state_hash` is supplied and the file is missing, abort with `PRE_STATE_HASH_MISSING_FILE`.** If `pre_state_hash` is absent and the file is missing, no-op silently. |
 | `delete_directory`       | Recursive delete. No-op if missing.                                             |
 | `rename_file`            | Move within repo. Fails if destination exists. Optional: `pre_state_hash` on source. |
 | `chmod`                  | Set file mode. Required: `path`, `mode`. (Provided as a separate op so mode-only changes don't require a rewrite.) |
 | `json_set`               | Set JSON pointer to value.                                                      |
 | `json_remove`            | Remove JSON pointer. No-op if missing.                                          |
-| `json_remove_matching`   | Remove keys under `pointer` whose **value matches `value_regex`**, OR (alternative form) keys whose **name matches `key_regex`**. Op accepts exactly one of `value_regex` / `key_regex`.|
+| `json_remove_matching`   | Remove keys under `pointer` whose **value matches `value_regex`**, OR (alternative form) keys whose **name matches `key_regex`**. Op accepts exactly one of `value_regex` / `key_regex`. **Regex flavor: ECMA (JavaScript `RegExp`)**, case-sensitive, not auto-anchored — the implementer wraps with `^...$` if anchoring is intended. Specified to remove the "which regex dialect" decision from the implementer.|
 | `json_merge`             | Deep-merge object into pointer location. **Additive only**: object recursion, no scalar overwrite, no array overwrite. (This op is distinct from the jq `*` semantics used internally by plan-builder for `package.json.tmpl` merging — that's not exposed as an op.) |
 | `claude_settings_merge`  | Specialized: per-field merge of `.claude/settings.json` (see §8). Carries `additions: { permissions, hooks, enabledPlugins, scalars }`. |
-| `shell`                  | Run a whitelisted command. **Whitelist (closed):** `pnpm install`, `pnpm dedupe`. Args are static literals declared in plan. **`commit_paths` field is required at the step level** — executor stages only those paths after the command runs; any other modified files trigger `EXTRANEOUS_FILE_MODIFICATIONS`. Executor refuses any `shell` op whose `command` is not on the whitelist, even if the JSON parses. |
+| `shell`                  | Run a whitelisted command. **Whitelist (closed, with per-entry behavior flags):** (a) `pnpm install` — must succeed; (b) `pnpm dedupe` — must succeed; (c) `git config --unset core.hooksPath` — exit code ignored (no-op if key absent); (d) `find .git/hooks -type f -not -name "*.sample" -delete` — exit code ignored (no-op if dir empty). The four entries above are the **only** strings the executor will accept (no argv variations). **`commit_paths` field is required at the step level** — executor stages only those paths after the command runs; any other modified files trigger `EXTRANEOUS_FILE_MODIFICATIONS`. (`git config` and `find` operate on `.git/`, which git itself doesn't track, so they produce no `commit_paths`.) Executor refuses any `shell` op whose `command` is not on the whitelist, even if the JSON parses. |
 
 **Step-level fields:**
 
@@ -372,9 +387,11 @@ Validated against `src/retrofit/schema/plan.schema.json` at retrofit pre-flight 
 
 The canonical "what janus ships in settings.json" is `SETTINGS_BASE` in `scripts/scaffold.sh` (lines 354–426). plan-builder reuses the same construction logic — slot values flow into `OTEL_RESOURCE_ATTRIBUTES`; pluginSet flows into `enabledPlugins`.
 
+**Slot interpolation safety rule (normative):** Only slots that pass a §5a regex validation rule MAY be interpolated into `claude_settings_merge` payload string positions. v0.1 interpolates only `workload` (matches `^[a-z][a-z0-9]{2,11}$`, so jq/JSON injection is impossible). Free-form slots like `description` MUST NOT appear in any settings.json content the plan-builder constructs. This is a closed allowlist, not a deny-list — adding a new slot to the interpolation set requires updating both this rule and the slot's validation rule in §5a.
+
 **`CLAUDE.md`** — never merged.
 
-- If existing `CLAUDE.md` is present: rename to `CLAUDE.pre-janus.md`, write janus's template (rendered via `mo`), insert `@CLAUDE.pre-janus.md` as the **second line** (after the existing `@AGENTS.md` import in the janus template). User's prose still loads, AGENTS conventions load first.
+- If existing `CLAUDE.md` is present: rename to `CLAUDE.pre-janus.md`, write janus's template (rendered via `mo`), then insert the literal line `@CLAUDE.pre-janus.md\n` at byte offset corresponding to immediately-after the first `@AGENTS.md\n` line. The resulting head of `CLAUDE.md` is exactly: `@AGENTS.md\n@CLAUDE.pre-janus.md\n\n## Claude-specific\n…`. (Two `@`-imports stacked with no blank line between, then the existing template body resumes after one blank line.) User's prose still loads, AGENTS conventions load first.
 - **Why `CLAUDE.pre-janus.md`:** `CLAUDE.local.md` is conventionally git-ignored by Claude Code; snapshot is meant to *preserve* user intent in version control.
 - If `CLAUDE.pre-janus.md` already exists at retrofit time: abort step with `CLAUDE_PRE_JANUS_EXISTS`; user must rename or delete first.
 - Plan-builder writes the snapshot target path as `claude_md_snapshot.target_path` in the step JSON for auditability.
@@ -460,9 +477,10 @@ janus diagnose --archetype <name> [--out <path>] [--slot key=value ...] [--plugi
   - Exit 1 on pre-flight failure
   - Exit 2 on internal error
 
-janus retrofit --plan <path> [--branch <name>] [--dry-run]
+janus retrofit --plan <path> [--branch <name>] [--dry-run] [--no-remote-check]
   - --branch default: 'janus/retrofit'; if taken and not overridden, search -2..-99 and exit with suggestion
   - --dry-run: validate plan + print step summary, exit without committing
+  - --no-remote-check: skip `git ls-remote` for branch-existence (local-only check); useful offline
   - Exit 0 on success
   - Exit 1 on pre-flight failure
   - Exit 2 on mid-execution failure (prints last-good SHA + suggested git reset command)
