@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import type { ClaudeKitSnapshot } from '../types/index.js';
 
@@ -16,7 +16,9 @@ export function analyzeClaudeKit(repoRoot: string): ClaudeKitSnapshot {
     };
   }
 
-  const has_settings_json = existsSync(join(claudeDir, 'settings.json'));
+  const settingsPath = join(claudeDir, 'settings.json');
+  const has_settings_json = existsSync(settingsPath);
+  const settings_json = has_settings_json ? safeReadJson(settingsPath) : undefined;
   const has_claude_md = existsSync(join(repoRoot, 'CLAUDE.md'));
   const has_pre_janus_md = existsSync(join(repoRoot, 'CLAUDE.pre-janus.md'));
 
@@ -24,7 +26,7 @@ export function analyzeClaudeKit(repoRoot: string): ClaudeKitSnapshot {
   const skills = listFilesRelative(join(claudeDir, 'skills'));
   const misc = listClaudeMisc(claudeDir);
 
-  return {
+  const out: ClaudeKitSnapshot = {
     has_claude_dir: true,
     has_settings_json,
     has_claude_md,
@@ -33,6 +35,16 @@ export function analyzeClaudeKit(repoRoot: string): ClaudeKitSnapshot {
     skills,
     misc,
   };
+  if (settings_json !== undefined) out.settings_json = settings_json;
+  return out;
+}
+
+function safeReadJson(path: string): unknown {
+  try {
+    return JSON.parse(readFileSync(path, 'utf8'));
+  } catch {
+    return undefined;
+  }
 }
 
 function listFilesRelative(dir: string): string[] {

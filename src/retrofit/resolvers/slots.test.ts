@@ -20,6 +20,7 @@ const baseSnap = (over: Partial<RepoSnapshot> = {}): Omit<RepoSnapshot, 'baselin
   },
   ci_workflows: [],
   unrecognized_tools: [],
+  dep_version_conflicts: [],
   plugin_evidence: {
     'frontend-design@claude-plugins-official': [],
     'playwright@claude-plugins-official': [],

@@ -71,6 +71,11 @@ export function analyze(
     claude_kit,
     ci_workflows,
     unrecognized_tools,
+    // TODO: detect dep version conflicts by comparing user devDependencies
+    // against the templates/_shared/package.json.tmpl rendered devDeps. Plan 3
+    // surfaces these via the DEP_VERSION_CONFLICT warning; the analyzer just
+    // emits an empty array until Plan 5 wires up the comparison.
+    dep_version_conflicts: [],
     plugin_evidence,
     git: gitResult.git,
     remote: gitResult.remote,
