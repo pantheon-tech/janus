@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import { JanusError } from '../errors.js';
 
 export function git(cwd: string, args: string[]): string {
   return execFileSync('git', args, { cwd, stdio: ['ignore', 'pipe', 'pipe'] }).toString('utf8');
@@ -23,4 +24,33 @@ export function stageAndCommit(cwd: string, paths: string[], message: string): v
 
 export function lastCommitSha(cwd: string): string {
   return git(cwd, ['rev-parse', 'HEAD']).trim();
+}
+
+function branchExists(repoRoot: string, branch: string, noRemoteCheck: boolean): boolean {
+  try {
+    git(repoRoot, ['rev-parse', '--verify', `refs/heads/${branch}`]);
+    return true;
+  } catch {
+    // local missing; check remote
+  }
+  if (noRemoteCheck) return false;
+  try {
+    const out = git(repoRoot, ['ls-remote', '--heads', 'origin', branch]).trim();
+    return out.length > 0;
+  } catch {
+    return false; // ls-remote failure → treat as not present
+  }
+}
+
+export function suggestAvailableBranch(
+  repoRoot: string,
+  base: string,
+  noRemoteCheck: boolean,
+): string {
+  for (let i = 2; i <= 99; i++) {
+    const candidate = `${base}-${i}`;
+    if (branchExists(repoRoot, candidate, noRemoteCheck)) continue;
+    return candidate;
+  }
+  throw new JanusError('BRANCH_SUGGESTION_EXHAUSTED', `no available branch in ${base}-2..99`);
 }
