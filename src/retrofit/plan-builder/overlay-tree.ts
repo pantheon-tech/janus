@@ -204,3 +204,31 @@ function computeMode(rel: string): number {
 function toPosix(p: string): string {
   return sep === '/' ? p : p.split(sep).join(posix.sep);
 }
+
+/**
+ * Merge the user's existing package.json into the overlay tree's package.json,
+ * mutating the tree entry in place. User content is the LEFT operand; janus
+ * content (already in the tree) is the RIGHT operand. Per jq `*` semantics,
+ * janus wins on every key it sets; user-only keys/scripts survive.
+ *
+ * Caller decides whether to invoke this (only when the user has a package.json).
+ */
+export function mergeUserPackageJson(
+  tree: OverlayTree,
+  userPkg: Record<string, unknown>,
+): void {
+  const janusEntry = tree.get('package.json');
+  if (!janusEntry) {
+    tree.set('package.json', {
+      content: Buffer.from(`${JSON.stringify(userPkg, null, 2)}\n`, 'utf8'),
+      mode: 0o644,
+    });
+    return;
+  }
+  const janusPkg = JSON.parse(janusEntry.content.toString('utf8'));
+  const merged = jqDeepMerge(userPkg, janusPkg);
+  tree.set('package.json', {
+    content: Buffer.from(`${JSON.stringify(merged, null, 2)}\n`, 'utf8'),
+    mode: 0o644,
+  });
+}

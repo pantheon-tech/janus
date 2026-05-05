@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { buildOverlayTree } from './overlay-tree.js';
+import { buildOverlayTree, mergeUserPackageJson } from './overlay-tree.js';
 
 const JANUS_ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 
@@ -107,6 +107,23 @@ describe('buildOverlayTree (walker, .exclude, mode)', () => {
     const result = buildOverlayTree(JANUS_ROOT, 'generic-ts', stubSlots());
     expect(result.gitignore_lines.length).toBeGreaterThan(0);
     expect(result.gitignore_lines).toContain('node_modules/');
+  });
+
+  it('mergeUserPackageJson preserves user-only scripts and lets janus win on collisions', () => {
+    const result = buildOverlayTree(JANUS_ROOT, 'generic-ts', stubSlots());
+    const userPkg = {
+      name: 'user-app',
+      type: 'commonjs',
+      scripts: {
+        'my-custom-script': 'echo hi',
+        lint: 'eslint .',
+      },
+    };
+    mergeUserPackageJson(result.tree, userPkg);
+    const merged = JSON.parse(result.tree.get('package.json')!.content.toString('utf8'));
+    expect(merged.scripts['my-custom-script']).toBe('echo hi');
+    expect(merged.scripts.lint).not.toBe('eslint .');
+    expect(merged.type).toBe('module');
   });
 });
 
