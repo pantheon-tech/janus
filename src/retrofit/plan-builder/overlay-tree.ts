@@ -17,16 +17,25 @@ export function buildOverlayTree(
 ): OverlayResult {
   const tree: OverlayTree = new Map();
   const archetype_only = new Set<string>();
+  const gitignoreLines = { lines: [] as string[] };
   const sharedRoot = join(janusRoot, 'templates/_shared');
   const archeRoot = join(janusRoot, 'templates', archetype);
   const excludeLines = readExcludeFile(join(archeRoot, '.exclude'));
   const isExcluded = buildIsExcluded(excludeLines);
 
-  // Pass 1: shared walk.
-  walkTree({ janusRoot, base: sharedRoot, current: sharedRoot, isExcluded, slots, tree, opts });
+  // Pass 1: shared walk (also captures gitignore lines).
+  walkTree({
+    janusRoot,
+    base: sharedRoot,
+    current: sharedRoot,
+    isExcluded,
+    slots,
+    tree,
+    gitignoreLines,
+    opts,
+  });
 
-  // Pass 2: archetype walk (overlay-with-replace). Records every added/overwritten
-  // path in `archetype_only` so Plan 3 can emit a separate apply-archetype-overlay step.
+  // Pass 2: archetype walk (overlay-with-replace).
   if (existsSync(archeRoot)) {
     walkArchetype({
       janusRoot,
@@ -46,8 +55,7 @@ export function buildOverlayTree(
     archetype_only.add('package.json');
   }
 
-  // Task 18 fills gitignore_lines.
-  return { tree, gitignore_lines: [], archetype_only };
+  return { tree, gitignore_lines: gitignoreLines.lines, archetype_only };
 }
 
 type WalkArgs = {
@@ -57,11 +65,12 @@ type WalkArgs = {
   isExcluded: (rel: string) => boolean;
   slots: Record<string, string>;
   tree: OverlayTree;
+  gitignoreLines: { lines: string[] };
   opts: BuildOverlayOpts;
 };
 
 function walkTree(args: WalkArgs): void {
-  const { janusRoot, base, current, isExcluded, slots, tree, opts } = args;
+  const { janusRoot, base, current, isExcluded, slots, tree, gitignoreLines, opts } = args;
   for (const entry of readdirSync(current)) {
     const full = join(current, entry);
     const stat = statSync(full);
@@ -73,6 +82,17 @@ function walkTree(args: WalkArgs): void {
     }
     if (!stat.isFile()) continue;
     if (isExcluded(rel)) continue;
+
+    // .gitignore is special-cased: capture lines for plan-builder to emit
+    // gitignore_merge instead of a write_file op. Do NOT add it to the tree.
+    if (rel === '.gitignore') {
+      const content = readFileSync(full, 'utf8');
+      gitignoreLines.lines = content
+        .split('\n')
+        .map((l) => l.replace(/\r$/, ''))
+        .filter((l, i, arr) => !(i === arr.length - 1 && l === ''));
+      continue;
+    }
 
     if (rel.endsWith('.tmpl')) {
       if (opts.skipTmpl) continue;

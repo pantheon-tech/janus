@@ -97,6 +97,17 @@ describe('buildOverlayTree (walker, .exclude, mode)', () => {
     // biome.jsonc lives only in _shared/, never in archetype_only.
     expect(archetype_only.has('biome.jsonc')).toBe(false);
   });
+
+  it('does NOT add .gitignore to the tree (special-cased for gitignore_merge)', () => {
+    const result = buildOverlayTree(JANUS_ROOT, 'generic-ts', stubSlots());
+    expect(result.tree.has('.gitignore')).toBe(false);
+  });
+
+  it('captures janus .gitignore lines in source order', () => {
+    const result = buildOverlayTree(JANUS_ROOT, 'generic-ts', stubSlots());
+    expect(result.gitignore_lines.length).toBeGreaterThan(0);
+    expect(result.gitignore_lines).toContain('node_modules/');
+  });
 });
 
 function stubSlots(): Record<string, string> {
