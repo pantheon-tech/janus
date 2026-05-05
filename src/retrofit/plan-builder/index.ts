@@ -36,6 +36,7 @@ export function buildPlan(input: BuildPlanInput): Plan {
     ...generateApplySharedOverlaySteps(overlay.tree, snapshot.baseline_files, {
       has_user_gitignore: input.has_user_gitignore,
       gitignore_lines: overlay.gitignore_lines,
+      archetype_only: overlay.archetype_only,
     }),
   );
 

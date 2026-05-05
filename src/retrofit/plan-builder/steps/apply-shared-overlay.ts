@@ -37,6 +37,12 @@ const ROOT_DOCS = new Set([
 export type ApplySharedCtx = {
   has_user_gitignore: boolean;
   gitignore_lines: string[];
+  /**
+   * Paths the archetype overlay also writes — already-merged with shared content
+   * by overlay-tree. Skip these in the shared step so the per-file write_file op
+   * is emitted exactly once (in apply-archetype-overlay).
+   */
+  archetype_only: Set<string>;
 };
 
 export function generateApplySharedOverlaySteps(
@@ -47,6 +53,7 @@ export function generateApplySharedOverlaySteps(
   const buckets = new Map<string, string[]>();
   for (const path of tree.keys()) {
     if (path.startsWith('.claude/')) continue;
+    if (ctx.archetype_only.has(path)) continue;
     const group = bucketFor(path);
     if (!group) continue;
     const arr = buckets.get(group) ?? [];

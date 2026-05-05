@@ -20,6 +20,7 @@ describe('generateApplySharedOverlaySteps', () => {
     const steps = generateApplySharedOverlaySteps(t, [], {
       has_user_gitignore: false,
       gitignore_lines: [],
+      archetype_only: new Set(),
     });
     const ids = steps.map((s) => s.id).sort();
     expect(ids).toEqual([
@@ -43,6 +44,7 @@ describe('generateApplySharedOverlaySteps', () => {
     const steps = generateApplySharedOverlaySteps(t, [], {
       has_user_gitignore: false,
       gitignore_lines: [],
+      archetype_only: new Set(),
     });
     const dotfiles = steps.find((s) => s.id === 'root-dotfiles');
     const configs = steps.find((s) => s.id === 'root-configs');
@@ -61,6 +63,7 @@ describe('generateApplySharedOverlaySteps', () => {
     const steps = generateApplySharedOverlaySteps(t, [], {
       has_user_gitignore: true,
       gitignore_lines: ['node_modules/', 'dist/'],
+      archetype_only: new Set(),
     });
     const dotfiles = steps.find((s) => s.id === 'root-dotfiles');
     const merge = dotfiles?.operations.find((o) => o.op === 'gitignore_merge');
@@ -74,6 +77,7 @@ describe('generateApplySharedOverlaySteps', () => {
     const steps = generateApplySharedOverlaySteps(t, [], {
       has_user_gitignore: false,
       gitignore_lines: ['node_modules/'],
+      archetype_only: new Set(),
     });
     const dotfiles = steps.find((s) => s.id === 'root-dotfiles');
     const writeIgnore = dotfiles?.operations.find(
@@ -90,6 +94,7 @@ describe('generateApplySharedOverlaySteps', () => {
     const steps = generateApplySharedOverlaySteps(t, [], {
       has_user_gitignore: false,
       gitignore_lines: [],
+      archetype_only: new Set(),
     });
     expect(steps.find((s) => s.id === 'apply-shared-overlay/.claude')).toBeUndefined();
   });
