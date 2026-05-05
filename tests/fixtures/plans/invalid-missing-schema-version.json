@@ -1,0 +1,30 @@
+{
+  "meta": {
+    "janus_version": "0.1.0",
+    "generated_at": "2026-05-05T00:00:00.000Z"
+  },
+  "payload": {
+    "repo_root": "/tmp/example",
+    "archetype": "generic-ts",
+    "target_branch": "janus/retrofit",
+    "slots": {
+      "workload": "example",
+      "description": "Example workload",
+      "archetype": "generic-ts",
+      "github_org": "pantheon-tech",
+      "author": "Daniel Skipper",
+      "author_email": "daniel@skipper.kiwi",
+      "node_version": "24",
+      "license": "MIT",
+      "region": "australiaeast",
+      "template_version": "v0.1.0",
+      "year": "2026",
+      "date": "2026-05-05",
+      "base_branch": "staging"
+    },
+    "plugins": [],
+    "prior_marker": null,
+    "warnings": [],
+    "steps": []
+  }
+}
