@@ -43,6 +43,15 @@ describe('buildOverlayTree (walker, .exclude, mode)', () => {
       }
     }
   });
+
+  it('renders .tmpl files using slots', () => {
+    const tree = buildOverlayTree(JANUS_ROOT, 'generic-ts', stubSlots());
+    const readme = tree.get('README.md');
+    expect(readme).toBeDefined();
+    const text = readme!.content.toString('utf8');
+    expect(text).not.toContain('{{workload}}');
+    expect(text).not.toContain('<%workload%>');
+  });
 });
 
 function stubSlots(): Record<string, string> {
