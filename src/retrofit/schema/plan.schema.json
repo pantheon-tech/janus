@@ -1,0 +1,292 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://janus.pantheon.tech/schemas/plan.schema.json",
+  "title": "JanusRetrofitPlan",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "meta", "payload"],
+  "properties": {
+    "schema_version": { "const": "1" },
+    "meta": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["janus_version", "generated_at"],
+      "properties": {
+        "janus_version": { "type": "string" },
+        "generated_at": { "type": "string", "format": "date-time" }
+      }
+    },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repo_root",
+        "archetype",
+        "target_branch",
+        "slots",
+        "plugins",
+        "prior_marker",
+        "warnings",
+        "steps"
+      ],
+      "properties": {
+        "repo_root": { "type": "string" },
+        "archetype": {
+          "enum": [
+            "generic-ts",
+            "backend-functions",
+            "backend-container-app",
+            "frontend-vite-react",
+            "mcp-server",
+            "monorepo-root"
+          ]
+        },
+        "target_branch": { "type": "string", "minLength": 1 },
+        "slots": {
+          "type": "object",
+          "additionalProperties": { "type": "string" },
+          "required": [
+            "workload",
+            "description",
+            "archetype",
+            "github_org",
+            "author",
+            "author_email",
+            "node_version",
+            "license",
+            "region",
+            "template_version",
+            "year",
+            "date",
+            "base_branch"
+          ]
+        },
+        "plugins": { "type": "array", "items": { "type": "string" } },
+        "prior_marker": {
+          "oneOf": [{ "type": "null" }, { "$ref": "marker.schema.json" }]
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["code", "message", "evidence"],
+            "properties": {
+              "code": { "type": "string" },
+              "message": { "type": "string" },
+              "evidence": { "type": "array", "items": { "type": "string" } }
+            }
+          }
+        },
+        "steps": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Step" }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "Step": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "category",
+        "title",
+        "commit_message",
+        "preconditions",
+        "operations",
+        "commit_paths"
+      ],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "category": {
+          "enum": [
+            "displace-tools",
+            "set-package-manager",
+            "apply-shared-overlay",
+            "apply-archetype-overlay",
+            "merge-claude-kit",
+            "install-deps",
+            "write-marker"
+          ]
+        },
+        "title": { "type": "string", "minLength": 1 },
+        "commit_message": { "type": "string", "pattern": "^chore: " },
+        "preconditions": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Precondition" }
+        },
+        "operations": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Operation" }
+        },
+        "commit_paths": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "Precondition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type"],
+      "properties": {
+        "type": { "enum": ["file_exists", "file_absent", "json_pointer_equals"] },
+        "path": { "type": "string" },
+        "pointer": { "type": "string" },
+        "value": {}
+      }
+    },
+    "Operation": {
+      "oneOf": [
+        { "$ref": "#/$defs/OpWriteFile" },
+        { "$ref": "#/$defs/OpDeleteFile" },
+        { "$ref": "#/$defs/OpDeleteDirectory" },
+        { "$ref": "#/$defs/OpRenameFile" },
+        { "$ref": "#/$defs/OpChmod" },
+        { "$ref": "#/$defs/OpJsonSet" },
+        { "$ref": "#/$defs/OpJsonRemove" },
+        { "$ref": "#/$defs/OpJsonRemoveMatching" },
+        { "$ref": "#/$defs/OpJsonMerge" },
+        { "$ref": "#/$defs/OpClaudeSettingsMerge" },
+        { "$ref": "#/$defs/OpGitignoreMerge" },
+        { "$ref": "#/$defs/OpShell" }
+      ]
+    },
+    "OpWriteFile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["op", "path", "content"],
+      "properties": {
+        "op": { "const": "write_file" },
+        "path": { "type": "string" },
+        "content": { "type": "string" },
+        "mode": { "type": "integer" },
+        "pre_state_hash": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "overwrite": { "type": "boolean" }
+      }
+    },
+    "OpDeleteFile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["op", "path"],
+      "properties": {
+        "op": { "const": "delete_file" },
+        "path": { "type": "string" },
+        "pre_state_hash": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+      }
+    },
+    "OpDeleteDirectory": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["op", "path"],
+      "properties": {
+        "op": { "const": "delete_directory" },
+        "path": { "type": "string" }
+      }
+    },
+    "OpRenameFile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["op", "from", "to"],
+      "properties": {
+        "op": { "const": "rename_file" },
+        "from": { "type": "string" },
+        "to": { "type": "string" },
+        "pre_state_hash": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+      }
+    },
+    "OpChmod": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["op", "path", "mode"],
+      "properties": {
+        "op": { "const": "chmod" },
+        "path": { "type": "string" },
+        "mode": { "type": "integer" }
+      }
+    },
+    "OpJsonSet": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["op", "path", "pointer", "value"],
+      "properties": {
+        "op": { "const": "json_set" },
+        "path": { "type": "string" },
+        "pointer": { "type": "string", "pattern": "^/" },
+        "value": {}
+      }
+    },
+    "OpJsonRemove": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["op", "path", "pointer"],
+      "properties": {
+        "op": { "const": "json_remove" },
+        "path": { "type": "string" },
+        "pointer": { "type": "string", "pattern": "^/" }
+      }
+    },
+    "OpJsonRemoveMatching": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["op", "path", "pointer"],
+      "properties": {
+        "op": { "const": "json_remove_matching" },
+        "path": { "type": "string" },
+        "pointer": { "type": "string", "pattern": "^/" },
+        "value_regex": { "type": "string" },
+        "key_regex": { "type": "string" }
+      },
+      "oneOf": [
+        { "required": ["value_regex"], "not": { "required": ["key_regex"] } },
+        { "required": ["key_regex"], "not": { "required": ["value_regex"] } }
+      ]
+    },
+    "OpJsonMerge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["op", "path", "pointer", "value"],
+      "properties": {
+        "op": { "const": "json_merge" },
+        "path": { "type": "string" },
+        "pointer": { "type": "string", "pattern": "^/" },
+        "value": { "type": "object" }
+      }
+    },
+    "OpClaudeSettingsMerge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["op", "additions"],
+      "properties": {
+        "op": { "const": "claude_settings_merge" },
+        "additions": { "type": "object" },
+        "pre_state_hash": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+      }
+    },
+    "OpGitignoreMerge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["op", "lines"],
+      "properties": {
+        "op": { "const": "gitignore_merge" },
+        "lines": { "type": "array", "items": { "type": "string" } },
+        "pre_state_hash": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+      }
+    },
+    "OpShell": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["op", "command"],
+      "properties": {
+        "op": { "const": "shell" },
+        "command": {
+          "enum": [
+            "pnpm install",
+            "pnpm dedupe",
+            "git config --unset core.hooksPath",
+            "find .git/hooks -type f -not -name \"*.sample\" -delete"
+          ]
+        }
+      }
+    }
+  }
+}
