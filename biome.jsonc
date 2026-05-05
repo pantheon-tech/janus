@@ -18,7 +18,8 @@
       "!**/.claude",
       "!**/*.min.js",
       "!**/pnpm-lock.yaml",
-      "!templates"
+      "!templates",
+      "!tests/fixtures"
     ]
   },
   "formatter": {
