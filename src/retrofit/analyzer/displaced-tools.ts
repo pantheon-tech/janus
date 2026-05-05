@@ -38,13 +38,17 @@ const RULES: Rule[] = [
     match: (ctx) => Boolean(ctx.pkg?.raw?.eslintConfig),
   },
   // Prettier
-  ...['.prettierrc', '.prettierrc.json', '.prettierrc.yaml', '.prettierrc.yml', '.prettierrc.js'].map(
-    (f) => ({
-      tool: 'prettier' as const,
-      evidence: f,
-      match: (ctx: Ctx) => existsSync(join(ctx.repoRoot, f)),
-    }),
-  ),
+  ...[
+    '.prettierrc',
+    '.prettierrc.json',
+    '.prettierrc.yaml',
+    '.prettierrc.yml',
+    '.prettierrc.js',
+  ].map((f) => ({
+    tool: 'prettier' as const,
+    evidence: f,
+    match: (ctx: Ctx) => existsSync(join(ctx.repoRoot, f)),
+  })),
   ...['prettier.config.js', 'prettier.config.cjs', 'prettier.config.mjs'].map((f) => ({
     tool: 'prettier' as const,
     evidence: f,
@@ -75,13 +79,17 @@ const RULES: Rule[] = [
     match: (ctx) => Boolean(ctx.pkg?.devDependencies?.husky),
   },
   // Jest
-  ...['jest.config.js', 'jest.config.cjs', 'jest.config.mjs', 'jest.config.ts', 'jest.config.json'].map(
-    (f) => ({
-      tool: 'jest' as const,
-      evidence: f,
-      match: (ctx: Ctx) => existsSync(join(ctx.repoRoot, f)),
-    }),
-  ),
+  ...[
+    'jest.config.js',
+    'jest.config.cjs',
+    'jest.config.mjs',
+    'jest.config.ts',
+    'jest.config.json',
+  ].map((f) => ({
+    tool: 'jest' as const,
+    evidence: f,
+    match: (ctx: Ctx) => existsSync(join(ctx.repoRoot, f)),
+  })),
   {
     tool: 'jest',
     evidence: 'package.json:devDependencies.jest',

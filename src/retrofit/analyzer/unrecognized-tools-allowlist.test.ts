@@ -42,9 +42,7 @@ describe('loadUnrecognizedToolsAllowlist', () => {
   });
 
   it('returns [] when the heading is absent', async () => {
-    const root = makeJanusRoot(
-      ['# Dependencies', '', '## Other heading', '', '- foo'].join('\n'),
-    );
+    const root = makeJanusRoot(['# Dependencies', '', '## Other heading', '', '- foo'].join('\n'));
     const list = await loadUnrecognizedToolsAllowlist(root);
     expect(list).toEqual([]);
   });

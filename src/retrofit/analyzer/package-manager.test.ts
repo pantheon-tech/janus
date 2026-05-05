@@ -57,7 +57,10 @@ describe('analyzePackageManager', () => {
     const fx = materializeFixture('greenfield');
     cleanups.push(fx.cleanup);
     writeFileSync(join(fx.dir, 'package.json'), JSON.stringify({ name: 'root' }));
-    writeFileSync(join(fx.dir, 'pnpm-workspace.yaml'), "packages:\n  - 'packages/*'\n  - 'apps/*'\n");
+    writeFileSync(
+      join(fx.dir, 'pnpm-workspace.yaml'),
+      "packages:\n  - 'packages/*'\n  - 'apps/*'\n",
+    );
     const r = analyzePackageManager(fx.dir);
     expect(r.workspace).toEqual({ type: 'pnpm', packages: ['packages/*', 'apps/*'] });
   });

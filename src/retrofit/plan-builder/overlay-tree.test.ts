@@ -79,11 +79,7 @@ describe('buildOverlayTree (walker, .exclude, mode)', () => {
   });
 
   it('records every archetype-walked path in archetype_only', () => {
-    const { tree, archetype_only } = buildOverlayTree(
-      JANUS_ROOT,
-      'backend-functions',
-      stubSlots(),
-    );
+    const { tree, archetype_only } = buildOverlayTree(JANUS_ROOT, 'backend-functions', stubSlots());
     expect(archetype_only.size).toBeGreaterThan(0);
     expect(tree.has('package.json')).toBe(true);
     expect(archetype_only.has('package.json')).toBe(true);

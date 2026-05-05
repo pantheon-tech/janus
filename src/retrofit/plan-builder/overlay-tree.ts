@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, posix, relative, sep } from 'node:path';
 import type { OverlayResult, OverlayTree } from '../types/index.js';
 import { buildIsExcluded, readExcludeFile } from './exclude.js';
@@ -150,9 +150,7 @@ function walkArchetype(args: WalkArchetypeArgs): void {
       if (opts.skipTmpl) continue;
       const archeRendered = renderMo(janusRoot, full, slots);
       const sharedPkgEntry = tree.get('package.json');
-      const sharedPkg = sharedPkgEntry
-        ? JSON.parse(sharedPkgEntry.content.toString('utf8'))
-        : {};
+      const sharedPkg = sharedPkgEntry ? JSON.parse(sharedPkgEntry.content.toString('utf8')) : {};
       const archePkg = JSON.parse(archeRendered.toString('utf8'));
       const merged = jqDeepMerge(sharedPkg, archePkg);
       tree.set('package.json', {
@@ -213,10 +211,7 @@ function toPosix(p: string): string {
  *
  * Caller decides whether to invoke this (only when the user has a package.json).
  */
-export function mergeUserPackageJson(
-  tree: OverlayTree,
-  userPkg: Record<string, unknown>,
-): void {
+export function mergeUserPackageJson(tree: OverlayTree, userPkg: Record<string, unknown>): void {
   const janusEntry = tree.get('package.json');
   if (!janusEntry) {
     tree.set('package.json', {
