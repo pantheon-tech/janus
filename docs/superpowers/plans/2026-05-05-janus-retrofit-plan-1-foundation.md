@@ -60,7 +60,7 @@ Replace the `devDependencies` block and the `scripts` block.
     "format": "biome format --write biome.jsonc package.json scripts bin src",
     "check": "biome check --write biome.jsonc package.json scripts bin src",
     "typecheck": "tsc --noEmit",
-    "build": "tsc && cp -r src/retrofit/schema dist/retrofit/",
+    "build": "tsc && cp src/retrofit/schema/*.json dist/retrofit/schema/",
     "test:unit": "vitest run",
     "test": "bash tests/scaffold-smoke-test.sh && bash tests/bootstrap-smoke-test.sh && pnpm test:unit",
     "prepare": "lefthook install || true"
@@ -79,7 +79,7 @@ Replace the `devDependencies` block and the `scripts` block.
 }
 ```
 
-Note on the `build` script: `tsc` does NOT copy `.json` files into `dist/`. The `cp -r src/retrofit/schema dist/retrofit/` step is required so that downstream consumers can `import('./dist/retrofit/schema/plan.schema.json', { with: { type: 'json' } })` and so the vendored Ajv loader can resolve the schema file at runtime.
+Note on the `build` script: `tsc` does NOT copy `.json` files into `dist/`. The `cp src/retrofit/schema/*.json dist/retrofit/schema/` step is required so that downstream consumers can `import('./dist/retrofit/schema/plan.schema.json', { with: { type: 'json' } })` and so the vendored Ajv loader can resolve the schema file at runtime. The glob is `*.json` (not `cp -r ... schema dist/retrofit/`) so we don't accidentally copy `.ts` source files into `dist/`. The destination directory `dist/retrofit/schema/` is created by `tsc` (it emits `validate.js` there), so the directory exists before `cp` runs.
 
 Also add `"dist"` to the `files[]` array (preserve existing entries):
 

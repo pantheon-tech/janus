@@ -26,7 +26,7 @@
     "format": "biome format --write biome.jsonc package.json scripts bin src",
     "check": "biome check --write biome.jsonc package.json scripts bin src",
     "typecheck": "tsc --noEmit",
-    "build": "tsc && cp -r src/retrofit/schema dist/retrofit/",
+    "build": "tsc && cp src/retrofit/schema/*.json dist/retrofit/schema/",
     "test:unit": "vitest run",
     "test": "bash tests/scaffold-smoke-test.sh && bash tests/bootstrap-smoke-test.sh && pnpm test:unit",
     "prepare": "lefthook install || true"
