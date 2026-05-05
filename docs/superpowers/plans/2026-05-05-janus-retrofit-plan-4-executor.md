@@ -35,6 +35,25 @@
 
 ---
 
+## Consumed surface from upstream plans
+
+Plan 4 imports the following symbols from earlier plans rather than redeclaring them. Cross-plan contract changes go in those plans, not here:
+
+| Symbol | Source | Path used inside `src/retrofit/executor/**` |
+|---|---|---|
+| `JanusError` | Plan 1 | `'../errors.js'` (one level above `executor/`) |
+| `ERROR_CODES`, `ErrorCode` | Plan 1 | `'../errors.js'` |
+| `MID_EXECUTION_CODES` | Plan 1 | `'../errors.js'` |
+| `SHELL_WHITELIST`, `ShellCommand` | Plan 1 | `'../../types/index.js'` (from `executor/operations/`) |
+| `Plan`, `Operation`, `JanusMarker` | Plan 1 | `'../types/index.js'` |
+| `validatePlan`, `validateMarker` | Plan 1 | `'../schema/validate.js'` |
+
+Plan 4 does NOT redeclare any of these. Plan 4 also does NOT throw `SLOT_VALIDATION_FAILED` or `SLOT_UNRESOLVED_NON_INTERACTIVE` — those are Plan 2's territory.
+
+Inside `executor/operations/**` the relative path to `errors.ts` is `'../../errors.js'` (two levels up). Inside `executor/preflight/**` it's `'../../errors.js'` as well. Files directly under `executor/` use `'../errors.js'`. The same depth rules apply to `'../../types/index.js'` vs `'../types/index.js'`.
+
+---
+
 ## File structure
 
 ```
@@ -56,72 +75,22 @@ src/retrofit/executor/
 ├── step-driver.ts          — per-step composition: pre-hash, ops, status, commit
 ├── git.ts                  — branch creation, status, commit, collision search
 ├── marker.ts               — build final JanusMarker JSON, replace placeholder content
-├── run-report.ts           — RunReport struct + abort helper
-└── errors.ts               — typed error codes (PRE_STATE_HASH_MISMATCH, EXTRANEOUS_FILE_MODIFICATIONS, etc.)
+└── run-report.ts           — RunReport struct + abort helper
 ```
+
+Note: `errors.ts` lives at `src/retrofit/errors.ts` (Plan 1 owns it). The executor does not maintain its own copy.
 
 ---
 
-## Task 1: errors.ts + preflight/diagnose-checks.ts (#1–#5, #8)
+## Task 1: preflight/diagnose-checks.ts (#1–#5, #8)
 
 **Files:**
-- Create: `src/retrofit/executor/errors.ts`
 - Create: `src/retrofit/executor/preflight/diagnose-checks.ts`
 - Create: `src/retrofit/executor/preflight/diagnose-checks.test.ts`
 
-- [ ] **Step 1: Implement errors.ts**
+> Note: `JanusError` and `ERROR_CODES` come from Plan 1's `src/retrofit/errors.ts`. Plan 4 imports them — it does NOT define its own copy under `executor/`. Verify Plan 1 has landed before starting this task. If `src/retrofit/errors.ts` is missing, stop and finish Plan 1 first.
 
-`src/retrofit/executor/errors.ts`:
-
-```ts
-export const ERROR_CODES = {
-  // Pre-flight
-  NOT_A_GIT_REPO: 'NOT_A_GIT_REPO',
-  UNKNOWN_ARCHETYPE: 'UNKNOWN_ARCHETYPE',
-  MARKER_INVALID: 'MARKER_INVALID',
-  MARKER_VERSION_UNRECOGNIZED: 'MARKER_VERSION_UNRECOGNIZED',
-  REQUIRED_TOOL_MISSING: 'REQUIRED_TOOL_MISSING',
-  HAS_SUBMODULES: 'HAS_SUBMODULES',
-  HAS_SYMLINKS: 'HAS_SYMLINKS',
-  CASE_INSENSITIVE_COLLISION: 'CASE_INSENSITIVE_COLLISION',
-  INVOKED_FROM_WORKSPACE_MEMBER: 'INVOKED_FROM_WORKSPACE_MEMBER',
-  INVOKED_FROM_WORKTREE: 'INVOKED_FROM_WORKTREE',
-  PLAN_FILE_MISSING: 'PLAN_FILE_MISSING',
-  PLAN_INVALID_JSON: 'PLAN_INVALID_JSON',
-  PLAN_SCHEMA_INVALID: 'PLAN_SCHEMA_INVALID',
-  SCHEMA_VERSION_MISMATCH: 'SCHEMA_VERSION_MISMATCH',
-  REPO_ROOT_MISMATCH: 'REPO_ROOT_MISMATCH',
-  TREE_DIRTY: 'TREE_DIRTY',
-  HEAD_DETACHED: 'HEAD_DETACHED',
-  TARGET_BRANCH_EXISTS: 'TARGET_BRANCH_EXISTS',
-  REMOTE_UNREACHABLE: 'REMOTE_UNREACHABLE',
-  BRANCH_SUGGESTION_EXHAUSTED: 'BRANCH_SUGGESTION_EXHAUSTED',
-  // Execution
-  PRE_STATE_HASH_MISMATCH: 'PRE_STATE_HASH_MISMATCH',
-  PRE_STATE_HASH_MISSING_FILE: 'PRE_STATE_HASH_MISSING_FILE',
-  EXTRANEOUS_FILE_MODIFICATIONS: 'EXTRANEOUS_FILE_MODIFICATIONS',
-  CLAUDE_PRE_JANUS_EXISTS: 'CLAUDE_PRE_JANUS_EXISTS',
-  CLAUDE_TEMPLATE_UNEXPECTED_HEAD: 'CLAUDE_TEMPLATE_UNEXPECTED_HEAD',
-  GITIGNORE_BLOCK_MALFORMED: 'GITIGNORE_BLOCK_MALFORMED',
-  SHELL_NOT_WHITELISTED: 'SHELL_NOT_WHITELISTED',
-  COMMIT_HOOK_FAILED: 'COMMIT_HOOK_FAILED',
-} as const;
-
-export type ErrorCode = (typeof ERROR_CODES)[keyof typeof ERROR_CODES];
-
-export class JanusError extends Error {
-  constructor(
-    public readonly code: ErrorCode,
-    message: string,
-    public readonly remediation?: string,
-  ) {
-    super(message);
-    this.name = 'JanusError';
-  }
-}
-```
-
-- [ ] **Step 2: Write the failing diagnose-checks tests**
+- [ ] **Step 1: Write the failing diagnose-checks tests**
 
 `src/retrofit/executor/preflight/diagnose-checks.test.ts`:
 
@@ -145,14 +114,14 @@ describe('runDiagnoseChecks (#1–#5, #8)', () => {
     await expect(runDiagnoseChecks(fx.dir, 'generic-ts')).resolves.toBeUndefined();
   });
 
-  it('throws UNKNOWN_ARCHETYPE for invalid archetype', async () => {
+  it('throws INVALID_ARCHETYPE for invalid archetype', async () => {
     const fx = materializeFixture('greenfield');
     cleanups.push(fx.cleanup);
-    await expect(runDiagnoseChecks(fx.dir, 'wat')).rejects.toMatchObject({ code: 'UNKNOWN_ARCHETYPE' });
+    await expect(runDiagnoseChecks(fx.dir, 'wat')).rejects.toMatchObject({ code: 'INVALID_ARCHETYPE' });
   });
 
-  it('throws NOT_A_GIT_REPO outside a repo', async () => {
-    await expect(runDiagnoseChecks('/tmp', 'generic-ts')).rejects.toMatchObject({ code: 'NOT_A_GIT_REPO' });
+  it('throws NOT_IN_GIT_REPO outside a repo', async () => {
+    await expect(runDiagnoseChecks('/tmp', 'generic-ts')).rejects.toMatchObject({ code: 'NOT_IN_GIT_REPO' });
   });
 
   it('throws HAS_SUBMODULES when .gitmodules has entries', async () => {
@@ -188,7 +157,7 @@ describe('runDiagnoseChecks (#1–#5, #8)', () => {
 });
 ```
 
-- [ ] **Step 3: Implement diagnose-checks.ts**
+- [ ] **Step 2: Implement diagnose-checks.ts**
 
 `src/retrofit/executor/preflight/diagnose-checks.ts`:
 
@@ -197,7 +166,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { validateMarker } from '../../schema/validate.js';
-import { JanusError } from '../errors.js';
+import { JanusError } from '../../errors.js';
 
 const ARCHETYPES = new Set([
   'generic-ts',
@@ -219,11 +188,11 @@ export async function runDiagnoseChecks(repoRoot: string, archetype: string): Pr
       stdio: ['ignore', 'pipe', 'pipe'],
     }).toString('utf8').trim();
   } catch {
-    throw new JanusError('NOT_A_GIT_REPO', `${repoRoot} is not inside a git repository`);
+    throw new JanusError('NOT_IN_GIT_REPO', `${repoRoot} is not inside a git repository`);
   }
   // #2 archetype known
   if (!ARCHETYPES.has(archetype)) {
-    throw new JanusError('UNKNOWN_ARCHETYPE', `unknown archetype: ${archetype}`);
+    throw new JanusError('INVALID_ARCHETYPE', `unknown archetype: ${archetype}`);
   }
   // #3 .janus.json validity if present
   const markerPath = join(topLevel, '.janus.json');
@@ -240,7 +209,7 @@ export async function runDiagnoseChecks(repoRoot: string, archetype: string): Pr
     }
     if (r.value.schema_version !== '1') {
       throw new JanusError(
-        'MARKER_VERSION_UNRECOGNIZED',
+        'MARKER_INVALID',
         `marker schema_version=${r.value.schema_version}, supported=1`,
       );
     }
@@ -250,7 +219,7 @@ export async function runDiagnoseChecks(repoRoot: string, archetype: string): Pr
     try {
       execFileSync(tool, ['--version'], { stdio: 'pipe' });
     } catch {
-      throw new JanusError('REQUIRED_TOOL_MISSING', `required tool not found on PATH: ${tool}`);
+      throw new JanusError('TOOL_MISSING', `required tool not found on PATH: ${tool}`);
     }
   }
   // mo (vendored — caller passes janusRoot; for the test we can't always check, so optional).
@@ -286,13 +255,13 @@ function findAncestorWorkspace(start: string): string | undefined {
 }
 ```
 
-- [ ] **Step 4: Run, verify, commit**
+- [ ] **Step 3: Run, verify, commit**
 
 ```bash
 pnpm test:unit -- diagnose-checks.test
 pnpm typecheck
-git add src/retrofit/executor/errors.ts src/retrofit/executor/preflight/diagnose-checks.ts src/retrofit/executor/preflight/diagnose-checks.test.ts
-git commit -m "feat(retrofit): executor errors + diagnose pre-flight checks #1-#5 and #8"
+git add src/retrofit/executor/preflight/diagnose-checks.ts src/retrofit/executor/preflight/diagnose-checks.test.ts
+git commit -m "feat(retrofit): diagnose pre-flight checks #1-#5 and #8"
 ```
 
 ---
@@ -329,7 +298,7 @@ describe('runPostOverlayChecks (#6, #7)', () => {
     expect(() => runPostOverlayChecks(fx.dir, new Set(['biome.jsonc']))).not.toThrow();
   });
 
-  it('throws HAS_SYMLINKS when a target path resolves through a symlink', () => {
+  it('throws TARGET_PATH_SYMLINK when a target path resolves through a symlink', () => {
     const fx = materializeFixture('greenfield');
     cleanups.push(fx.cleanup);
     mkdirSync(join(fx.dir, '.claude'));
@@ -337,16 +306,16 @@ describe('runPostOverlayChecks (#6, #7)', () => {
     symlinkSync('settings.json', join(fx.dir, '.claude/settings-link.json'));
     expect(() =>
       runPostOverlayChecks(fx.dir, new Set(['.claude/settings-link.json'])),
-    ).toThrow(/HAS_SYMLINKS/);
+    ).toThrow(/TARGET_PATH_SYMLINK/);
   });
 
-  it('throws CASE_INSENSITIVE_COLLISION when overlay path differs only by case from existing', () => {
+  it('throws CASE_COLLISION when overlay path differs only by case from existing', () => {
     const fx = materializeFixture('greenfield');
     cleanups.push(fx.cleanup);
     writeFileSync(join(fx.dir, 'README.md'), '# user');
     expect(() =>
       runPostOverlayChecks(fx.dir, new Set(['readme.md'])),
-    ).toThrow(/CASE_INSENSITIVE_COLLISION/);
+    ).toThrow(/CASE_COLLISION/);
   });
 });
 ```
@@ -356,20 +325,19 @@ describe('runPostOverlayChecks (#6, #7)', () => {
 `src/retrofit/executor/preflight/post-overlay-checks.ts`:
 
 ```ts
-import { existsSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, lstatSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { JanusError } from '../errors.js';
+import { JanusError } from '../../errors.js';
 
 export function runPostOverlayChecks(repoRoot: string, targetPaths: Set<string>): void {
-  // #6 symlinks in target paths
+  // #6 symlinks in target paths — use lstat (does NOT follow links) so we detect a symlink ITSELF
+  // rather than the kind of file it resolves to.
   for (const rel of targetPaths) {
     const full = join(repoRoot, rel);
     if (existsSync(full)) {
-      const stat = statSync(full, { throwIfNoEntry: false } as never);
-      // statSync follows links by default; use lstatSync semantics via a lstat probe.
-      const lstat = require('node:fs').lstatSync(full);
+      const lstat = lstatSync(full);
       if (lstat.isSymbolicLink()) {
-        throw new JanusError('HAS_SYMLINKS', `symlink found at target path: ${rel}`);
+        throw new JanusError('TARGET_PATH_SYMLINK', `symlink found at target path: ${rel}`);
       }
     }
   }
@@ -392,7 +360,7 @@ export function runPostOverlayChecks(repoRoot: string, targetPaths: Set<string>)
     for (const e of entries) {
       if (e !== baseName && e.toLowerCase() === lc) {
         throw new JanusError(
-          'CASE_INSENSITIVE_COLLISION',
+          'CASE_COLLISION',
           `existing ${join(dirname(rel), e)} would collide with overlay target ${rel}`,
         );
       }
@@ -506,6 +474,52 @@ describe('runRetrofitChecks (#9–#16)', () => {
       { code: 'TARGET_BRANCH_EXISTS' },
     );
   });
+
+  it('throws HEAD_DETACHED when HEAD is not on a branch', async () => {
+    const fx = materializeFixture('greenfield');
+    cleanups.push(fx.cleanup);
+    // Make a commit so HEAD has a SHA to detach to.
+    writeFileSync(join(fx.dir, 'seed.txt'), 'x');
+    execSync('git add -A && git commit -m seed', { cwd: fx.dir, stdio: 'pipe' });
+    execSync('git checkout --detach HEAD', { cwd: fx.dir, stdio: 'pipe' });
+    const planPath = join(fx.dir, '.janus-retrofit.json');
+    writeFileSync(planPath, '{}');
+    const plan = samplePlan({ repo_root: fx.dir });
+    await expect(runRetrofitChecks({ plan, planPath, repoRoot: fx.dir, noRemoteCheck: true })).rejects.toMatchObject(
+      { code: 'HEAD_DETACHED' },
+    );
+  });
+
+  it('throws REMOTE_UNREACHABLE when ls-remote fails and noRemoteCheck is not set', async () => {
+    const fx = materializeFixture('greenfield');
+    cleanups.push(fx.cleanup);
+    // Point origin at an unreachable URL so `git ls-remote origin` fails.
+    execSync('git remote add origin file:///nonexistent/repo.git', { cwd: fx.dir, stdio: 'pipe' });
+    const planPath = join(fx.dir, '.janus-retrofit.json');
+    writeFileSync(planPath, '{}');
+    const plan = samplePlan({ repo_root: fx.dir });
+    await expect(
+      runRetrofitChecks({ plan, planPath, repoRoot: fx.dir, noRemoteCheck: false }),
+    ).rejects.toMatchObject({ code: 'REMOTE_UNREACHABLE' });
+  });
+
+  it('throws INVOKED_FROM_WORKTREE when run from a linked worktree', async () => {
+    const fx = materializeFixture('greenfield');
+    cleanups.push(fx.cleanup);
+    writeFileSync(join(fx.dir, 'seed.txt'), 'x');
+    execSync('git add -A && git commit -m seed', { cwd: fx.dir, stdio: 'pipe' });
+    const wt = `${fx.dir}-wt`;
+    execSync(`git worktree add ${wt} -b feature/x`, { cwd: fx.dir, stdio: 'pipe' });
+    cleanups.push(() => {
+      try { execSync(`git worktree remove --force ${wt}`, { cwd: fx.dir, stdio: 'pipe' }); } catch { /* best effort */ }
+    });
+    const planPath = join(wt, '.janus-retrofit.json');
+    writeFileSync(planPath, '{}');
+    const plan = samplePlan({ repo_root: wt });
+    await expect(
+      runRetrofitChecks({ plan, planPath, repoRoot: wt, noRemoteCheck: true }),
+    ).rejects.toMatchObject({ code: 'INVOKED_FROM_WORKTREE' });
+  });
 });
 ```
 
@@ -517,7 +531,7 @@ describe('runRetrofitChecks (#9–#16)', () => {
 import { execFileSync } from 'node:child_process';
 import { relative } from 'node:path';
 import type { Plan } from '../../types/index.js';
-import { JanusError } from '../errors.js';
+import { JanusError } from '../../errors.js';
 
 export type RetrofitCheckOpts = {
   plan: Plan;
@@ -616,7 +630,7 @@ export async function runRetrofitChecks(opts: RetrofitCheckOpts): Promise<void> 
   try {
     execFileSync('pnpm', ['--version'], { stdio: 'pipe' });
   } catch {
-    throw new JanusError('REQUIRED_TOOL_MISSING', 'pnpm not found on PATH');
+    throw new JanusError('TOOL_MISSING', 'pnpm not found on PATH');
   }
 
   // #16 not from a linked worktree
@@ -705,7 +719,7 @@ A single switch on `op.op` that delegates to the right handler. Refuses unknown 
 
 ```ts
 import type { Operation } from '../../types/index.js';
-import { JanusError } from '../errors.js';
+import { JanusError } from '../../errors.js';
 import { applyChmod, applyDeleteDirectory, applyDeleteFile, applyRenameFile } from './fs.js';
 import { applyClaudeSettingsMerge } from './claude-settings.js';
 import { applyGitignoreMerge } from './gitignore.js';
@@ -742,10 +756,13 @@ export async function applyOperation(op: Operation, ctx: ApplyOpCtx): Promise<vo
     case 'shell':
       return applyShell(op, ctx);
     default: {
-      // Exhaustiveness check + runtime guard.
+      // Exhaustiveness check + runtime guard. The executor relies on plan validation having
+      // already happened upstream (Plan 1 schema + Plan 3 plan-builder); reaching this branch
+      // means a malformed plan slipped through validation, so we surface PLAN_SCHEMA_INVALID
+      // with a message that points at the upstream validator.
       throw new JanusError(
         'PLAN_SCHEMA_INVALID',
-        `unknown op kind: ${(op as { op: string }).op}`,
+        `unknown operation '${(op as { op: string }).op}' — plan schema should have rejected this earlier`,
       );
     }
   }
@@ -864,7 +881,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import type { Operation } from '../../types/index.js';
-import { JanusError } from '../errors.js';
+import { JanusError } from '../../errors.js';
 
 export async function applyWriteFile(
   op: Extract<Operation, { op: 'write_file' }>,
@@ -990,7 +1007,7 @@ describe('fs ops', () => {
 import { chmodSync, existsSync, renameSync, rmSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Operation } from '../../types/index.js';
-import { JanusError } from '../errors.js';
+import { JanusError } from '../../errors.js';
 
 export function applyDeleteFile(
   op: Extract<Operation, { op: 'delete_file' }>,
@@ -1160,6 +1177,7 @@ describe('json ops', () => {
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Operation } from '../../types/index.js';
+import { JanusError } from '../../errors.js';
 
 function readJson(file: string): { json: unknown; trailingNewline: boolean } {
   const text = readFileSync(file, 'utf8');
@@ -1243,9 +1261,16 @@ export function applyJsonRemoveMatching(
   writeJson(file, json, trailingNewline);
 }
 
-export function applyJsonMerge(): never {
-  // v0.1 plan-builder doesn't emit json_merge. Reserved for future use.
-  throw new Error('json_merge: not implemented in v0.1');
+export function applyJsonMerge(
+  _op: Extract<Operation, { op: 'json_merge' }>,
+  _ctx: { repoRoot: string },
+): never {
+  // v0.1 plan-builder doesn't emit json_merge. Reserved for future use. Plan-builder must
+  // not emit it; if it does, that's a plan-schema regression upstream.
+  throw new JanusError(
+    'PLAN_SCHEMA_INVALID',
+    'json_merge op is not implemented in v0.1; plan-builder should not emit it',
+  );
 }
 ```
 
@@ -1360,7 +1385,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import type { Operation } from '../../types/index.js';
-import { JanusError } from '../errors.js';
+import { JanusError } from '../../errors.js';
 
 type Settings = Record<string, unknown> & {
   permissions?: { allow?: string[]; deny?: string[] };
@@ -1539,7 +1564,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Operation } from '../../types/index.js';
-import { JanusError } from '../errors.js';
+import { JanusError } from '../../errors.js';
 
 const BEGIN = '# --- janus baseline (managed by janus retrofit; do not edit) ---';
 const END = '# --- end janus baseline ---';
@@ -1655,27 +1680,31 @@ describe('applyShell', () => {
 ```ts
 import { execSync } from 'node:child_process';
 import type { Operation } from '../../types/index.js';
-import { JanusError } from '../errors.js';
+import { SHELL_WHITELIST, type ShellCommand } from '../../types/index.js';
+import { JanusError } from '../../errors.js';
 
-const WHITELIST: Record<string, { ignoreExit: boolean }> = {
-  'pnpm install': { ignoreExit: false },
-  'pnpm dedupe': { ignoreExit: false },
-  'git config --unset core.hooksPath': { ignoreExit: true },
-  'find .git/hooks -type f -not -name "*.sample" -delete': { ignoreExit: true },
-};
+// Index → ignore-exit policy. Order matches Plan 1's SHELL_WHITELIST tuple:
+//   [0] 'pnpm install'
+//   [1] 'pnpm dedupe'
+//   [2] 'git config --unset core.hooksPath'           (idempotent — non-zero is fine)
+//   [3] 'find .git/hooks -type f -not -name "*.sample" -delete'  (no matches → non-zero)
+const IGNORE_EXIT_FOR: ReadonlySet<ShellCommand> = new Set([
+  SHELL_WHITELIST[2],
+  SHELL_WHITELIST[3],
+]);
 
 export async function applyShell(
   op: Extract<Operation, { op: 'shell' }>,
   ctx: { repoRoot: string },
 ): Promise<void> {
-  const entry = WHITELIST[op.command];
-  if (!entry) {
+  const command = op.command as ShellCommand;
+  if (!SHELL_WHITELIST.includes(command)) {
     throw new JanusError('SHELL_NOT_WHITELISTED', `command not on whitelist: ${op.command}`);
   }
   try {
-    execSync(op.command, { cwd: ctx.repoRoot, stdio: 'pipe' });
+    execSync(command, { cwd: ctx.repoRoot, stdio: 'pipe' });
   } catch (e) {
-    if (!entry.ignoreExit) throw e;
+    if (!IGNORE_EXIT_FOR.has(command)) throw e;
   }
 }
 ```
@@ -1741,8 +1770,9 @@ export function lastCommitSha(cwd: string): string {
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Operation, Plan } from '../types/index.js';
-import { JanusError } from './errors.js';
-import { modifiedPaths, stageAndCommit } from './git.js';
+import { SHELL_WHITELIST } from '../types/index.js';
+import { JanusError } from '../errors.js';
+import { lastCommitSha, modifiedPaths, stageAndCommit } from './git.js';
 import { applyOperation } from './operations/dispatch.js';
 
 type Step = Plan['payload']['steps'][number];
@@ -1752,7 +1782,7 @@ export type StepResult =
   | { status: 'skipped'; reason: string }
   | { status: 'committed_empty'; reason: string };
 
-export async function executeStep(step: Step, repoRoot: string, lastShaBefore: string): Promise<StepResult> {
+export async function executeStep(step: Step, repoRoot: string): Promise<StepResult> {
   // 1. Preconditions.
   for (const pre of step.preconditions) {
     if (pre.type === 'file_exists' && !existsSync(join(repoRoot, pre.path))) {
@@ -1765,8 +1795,6 @@ export async function executeStep(step: Step, repoRoot: string, lastShaBefore: s
 
   // 4. Verify modified paths against commit_paths.
   const modified = modifiedPaths(repoRoot);
-  // Ops that don't show up in `git status` (.git/-side shell cmds, node_modules in pnpm install)
-  // are exempt — their modifications go elsewhere or are gitignored.
   const expected = new Set(step.commit_paths);
   const extraneous = modified.filter((p) => !expected.has(p) && !isExpectedByOpClass(p, step));
   if (extraneous.length > 0) {
@@ -1780,18 +1808,47 @@ export async function executeStep(step: Step, repoRoot: string, lastShaBefore: s
     return { status: 'committed_empty', reason: 'no modifications after ops' };
   }
 
-  // 5. Stage + commit.
+  // 5. Stage + commit. Hooks run; the executor never bypasses with --no-verify (per §9).
+  // If a commit-msg / pre-commit hook rejects, the surrounding execute() catch wraps the error
+  // with last-good-SHA recovery instructions.
   stageAndCommit(repoRoot, step.commit_paths, step.commit_message);
-  const sha = require('node:child_process')
-    .execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repoRoot })
-    .toString('utf8')
-    .trim();
+  const sha = lastCommitSha(repoRoot);
   return { status: 'committed', sha };
 }
 
-function isExpectedByOpClass(_path: string, _step: Step): boolean {
-  // Future: ops like `shell` `pnpm install` may modify pnpm-lock.yaml outside commit_paths.
-  // For now, all ops produce predictable commit_paths handled by the spec.
+/**
+ * Returns true when the modified path is "expected" for some operation in `step` even though
+ * it is NOT in `step.commit_paths`. This is the carve-out for ops whose side-effects are either
+ * (a) outside git's view (writes under `.git/`) or (b) gitignored (`node_modules/`).
+ *
+ * Concretely:
+ *   - shell ops `git config --unset core.hooksPath` (SHELL_WHITELIST[2]) and
+ *     `find .git/hooks -type f ...` (SHELL_WHITELIST[3]) only touch paths inside `.git/`,
+ *     which `git status --porcelain` never reports — so the function should never see those
+ *     paths. We still return true defensively in case of future filesystem layout surprises.
+ *   - shell op `pnpm install` (SHELL_WHITELIST[0]) modifies `pnpm-lock.yaml` (which IS in the
+ *     step's `commit_paths` and therefore handled by the `expected.has(p)` short-circuit in
+ *     the caller — not this function) and `node_modules/...` which is gitignored by step
+ *     ordering (the .gitignore step must run before any pnpm install step). If `node_modules`
+ *     paths still show up here, the step ordering invariant is broken — that's a real bug,
+ *     so return false.
+ *
+ * Anything else: return false. We do NOT exempt arbitrary user-edits — those should be caught
+ * as EXTRANEOUS_FILE_MODIFICATIONS upstream.
+ */
+function isExpectedByOpClass(path: string, step: Step): boolean {
+  for (const op of step.operations) {
+    if (op.op !== 'shell') continue;
+    const cmd = (op as Extract<Operation, { op: 'shell' }>).command;
+    // (a) shell ops that touch `.git/` only
+    if (cmd === SHELL_WHITELIST[2] || cmd === SHELL_WHITELIST[3]) {
+      // git status won't surface .git/ paths, but be defensive: if it somehow does, accept.
+      if (path.startsWith('.git/') || path === '.git') return true;
+    }
+    // (b) `pnpm install` — pnpm-lock.yaml SHOULD be in commit_paths (handled by caller).
+    // We do not exempt anything here; if node_modules/ shows up, that is the upstream
+    // ordering bug described above.
+  }
   return false;
 }
 ```
@@ -1827,7 +1884,7 @@ describe('executeStep', () => {
       operations: [{ op: 'write_file', path: 'biome.jsonc', content: '{}\n' }],
       commit_paths: ['biome.jsonc'],
     };
-    const result = await executeStep(step, fx.dir, 'sha-before');
+    const result = await executeStep(step, fx.dir);
     expect(result.status).toBe('committed');
     expect(existsSync(join(fx.dir, 'biome.jsonc'))).toBe(true);
   });
@@ -1844,8 +1901,32 @@ describe('executeStep', () => {
       operations: [{ op: 'delete_file', path: '.eslintrc.json' }],
       commit_paths: [],
     };
-    const result = await executeStep(step, fx.dir, 'sha-before');
+    const result = await executeStep(step, fx.dir);
     expect(result.status).toBe('skipped');
+  });
+
+  it('does not bypass commit-msg hooks (no --no-verify)', async () => {
+    const fx = materializeFixture('greenfield');
+    cleanups.push(fx.cleanup);
+    // Install a commit-msg hook that rejects every message. If the executor passed
+    // --no-verify this would be silently bypassed; we assert it is NOT bypassed.
+    const { mkdirSync, writeFileSync, chmodSync } = await import('node:fs');
+    mkdirSync(join(fx.dir, '.git/hooks'), { recursive: true });
+    writeFileSync(
+      join(fx.dir, '.git/hooks/commit-msg'),
+      '#!/bin/sh\necho "rejected by hook" >&2\nexit 1\n',
+    );
+    chmodSync(join(fx.dir, '.git/hooks/commit-msg'), 0o755);
+    const step: Plan['payload']['steps'][number] = {
+      id: 'root-configs',
+      category: 'apply-shared-overlay',
+      title: 'configs',
+      commit_message: 'chore: apply janus root configs',
+      preconditions: [],
+      operations: [{ op: 'write_file', path: 'biome.jsonc', content: '{}\n' }],
+      commit_paths: ['biome.jsonc'],
+    };
+    await expect(executeStep(step, fx.dir)).rejects.toThrow(/rejected by hook|hook/);
   });
 });
 ```
@@ -2016,6 +2097,8 @@ git commit -m "feat(retrofit): executor/marker.ts — final JanusMarker construc
 
 Add `suggestAvailableBranch(repoRoot, base, noRemoteCheck)` returning the next free branch in the `<base>-2…99` range, or throwing `BRANCH_SUGGESTION_EXHAUSTED`.
 
+> **Consumed by Plan 5's CLI, NOT by `execute()`.** This function is the soft-fail UX hook: when retrofit-pre-flight #14 throws `TARGET_BRANCH_EXISTS`, Plan 5's CLI catches that, calls `suggestAvailableBranch` to compute the next free name, and prompts the user. `execute()` itself does NOT call this — it throws `TARGET_BRANCH_EXISTS` hard and lets the caller decide how to recover. Keeping the split means `execute()` stays a pure non-interactive function suitable for scripting.
+
 - [ ] **Step 1: Add the function to git.ts**
 
 ```ts
@@ -2052,7 +2135,7 @@ function branchExists(repoRoot: string, branch: string, noRemoteCheck: boolean):
 Add the import at top:
 
 ```ts
-import { JanusError } from './errors.js';
+import { JanusError } from '../errors.js';
 ```
 
 - [ ] **Step 2: Tests**
@@ -2114,7 +2197,7 @@ The public `execute(plan, repoRoot, opts)` function. Handles --dry-run (run pre-
 
 ```ts
 import type { Plan } from '../types/index.js';
-import { JanusError } from './errors.js';
+import { JanusError } from '../errors.js';
 import { checkoutNewBranch, lastCommitSha } from './git.js';
 import { buildMarker } from './marker.js';
 import { runAllRetrofitPreflight } from './preflight/index.js';
@@ -2167,13 +2250,17 @@ export async function execute(
       continue;
     }
     try {
-      const result = await executeStep(step, repoRoot, lastSha);
+      const result = await executeStep(step, repoRoot);
       recordResult(report, step.id, result);
       if (result.status === 'committed') lastSha = result.sha;
     } catch (e) {
-      // Annotate with last-good SHA before rethrowing.
+      // Annotate with last-good SHA before rethrowing. If the underlying error is already
+      // a JanusError we preserve its code; otherwise it's an unexpected internal failure
+      // (programmer error, fs glitch, etc.) so we surface it as INTERNAL_ERROR rather than
+      // pretending it's an EXTRANEOUS_FILE_MODIFICATIONS — which is reserved for a specific
+      // diagnosed condition, not a catch-all.
       throw new JanusError(
-        e instanceof JanusError ? e.code : 'EXTRANEOUS_FILE_MODIFICATIONS',
+        e instanceof JanusError ? e.code : 'INTERNAL_ERROR',
         `step ${step.id} failed: ${(e as Error).message}\n  last-good-sha: ${lastSha}\n  recover: git reset --hard ${lastSha}`,
       );
     }
@@ -2193,7 +2280,6 @@ export async function execute(
     const result = await executeStep(
       { ...finalStep, operations: [], commit_paths: ['.janus.json'] },
       repoRoot,
-      lastSha,
     );
     recordResult(report, 'write-marker', result);
   }
@@ -2308,8 +2394,11 @@ Plan 4 complete. End state:
 - Pre-flight #1–#16 enforced in numeric order, deferring #6/#7 until after overlay.
 - `execute()` runs end-to-end on the greenfield+generic-ts case (verified by integration test).
 - `--dry-run` makes no working-tree changes.
-- `RunReport` carries last-good SHA on abort.
+- `RunReport` carries last-good SHA on abort; non-JanusError failures wrapped as `INTERNAL_ERROR`, not `EXTRANEOUS_FILE_MODIFICATIONS`.
 - Marker is written via the final synthesized step with placeholder content replaced.
+- `JanusError`, `ERROR_CODES`, `MID_EXECUTION_CODES`, `SHELL_WHITELIST`, and `ShellCommand` are imported from Plan 1; Plan 4 ships no parallel copies.
+- `suggestAvailableBranch` is exposed for Plan 5's CLI to wrap the `TARGET_BRANCH_EXISTS` soft-fail UX; `execute()` itself throws hard.
+- New tests cover HEAD_DETACHED, REMOTE_UNREACHABLE, INVOKED_FROM_WORKTREE, and the no-`--no-verify` invariant.
 
 ---
 
@@ -2326,7 +2415,8 @@ Plan 4 complete. End state:
 2. **Out-of-scope discipline:** No CLI parsing, no prompt UI, no help text. `bin/janus.js` untouched.
 3. **TOCTOU handling:** `pre_state_hash` checked at op-application time inside each handler that supports it (`write_file`, `delete_file`, `claude_settings_merge`, `gitignore_merge`).
 4. **Type consistency:** `Operation` discriminated union used uniformly across dispatch + handlers. `Plan['payload']['steps'][number]` reused as the local `Step` alias.
-5. **Future considerations:** `WARN_OVERWRITE_USER_KIT` warnings for `claude-skills-overlay` / `claude-hooks-overlay` are computable at executor time (handler sees user's existing file); enrichment deferred to Plan 5 or later — the current behavior is correct (overlay-with-replace) but the warning isn't yet surfaced. Tracked here for visibility.
+5. **Cross-plan contracts:** Plan 4 IMPORTS `JanusError`, `ERROR_CODES`, `MID_EXECUTION_CODES`, `SHELL_WHITELIST`, and `ShellCommand` from Plan 1 — no local copies. Plan 4 does NOT throw `SLOT_VALIDATION_FAILED` or `SLOT_UNRESOLVED_NON_INTERACTIVE` (Plan 2's territory). Within `executor/operations/**` and `executor/preflight/**` the relative path to errors is `'../../errors.js'`; within direct children of `executor/` it is `'../errors.js'`.
+6. **Future considerations:** `WARN_OVERWRITE_USER_KIT` warnings for `claude-skills-overlay` / `claude-hooks-overlay` are computable at executor time (handler sees user's existing file); enrichment deferred to Plan 5 or later — the current behavior is correct (overlay-with-replace) but the warning isn't yet surfaced. Tracked here for visibility.
 
 ---
 

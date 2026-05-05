@@ -12,19 +12,28 @@
 
 ---
 
+## Consumed surface (from sibling plans)
+
+- `JanusError` class and `MID_EXECUTION_CODES: ReadonlySet<ErrorCode>` from Plan 1 (`src/retrofit/errors.ts`). Plan 5 imports them as `'../errors.js'` from `src/retrofit/cli/*.ts`.
+- `loadUnrecognizedToolsAllowlist(janusRoot: string): Promise<string[]>` from Plan 2 (`src/retrofit/analyzer/unrecognized-tools-allowlist.ts`). Plan 5 calls it inside `runDiagnose` and threads the result into `DiagnoseOpts.unrecognizedToolsAllowlist`. Plan 5 does NOT touch the analyzer signature — Plan 2 owns that.
+
+---
+
 ## Spec coverage map
 
 | Spec § | Plan 5 deliverable |
 |---|---|
 | §11 `janus diagnose` argv | `cli/diagnose-cmd.ts` (Tasks 2–3) |
 | §11 `janus retrofit` argv | `cli/retrofit-cmd.ts` (Task 5) |
-| §11 diagnose stdout summary | `cli/format-diagnose-summary.ts` (Task 4) |
-| §11 retrofit stdout summary | `cli/format-retrofit-summary.ts` (Task 6) |
+| §11 diagnose stdout summary | `cli/format-diagnose-summary.ts` (Task 3) |
+| §11 retrofit stdout summary | `cli/format-retrofit-summary.ts` (Task 4) |
+| §11 files-overwrite + files-merge stdout blocks | `cli/format-diagnose-summary.ts` (Task 3) |
+| §11 retrofit `--dry-run` per-step summary | `cli/retrofit-cmd.ts` (Task 5) |
+| §11 exit code 2 (diagnose internal error / retrofit mid-execution) | `cli/diagnose-cmd.ts` (Task 2), `cli/retrofit-cmd.ts` (Task 5) |
 | §5a interactive slot prompt | `cli/prompt.ts` (Task 1) |
 | §5b plugin confirmation | `cli/prompt.ts` (Task 1) |
-| §5 unrecognized_tools allowlist source | `cli/unrecognized-tools.ts` (Task 7) |
+| §5 unrecognized_tools allowlist source | uses Plan 2's `loadUnrecognizedToolsAllowlist`, no analyzer surface change in Plan 5 (Task 6) |
 | §11 `--branch` collision suggestion + soft-fail | wired in `retrofit-cmd.ts` (Task 5) |
-| §11 `--dry-run` summary | `retrofit-cmd.ts` calls executor with `dryRun: true` (Task 5) |
 | §13 windows out-of-scope (CLI exits early on win32) | `cli/diagnose-cmd.ts` and `retrofit-cmd.ts` first-line check |
 
 ---
@@ -34,16 +43,19 @@
 ```
 src/retrofit/cli/
 ├── argparse.ts                      — minimist-shaped parser (no external dep)
-├── prompt.ts                        — readline-based slot + plugin prompts
-├── unrecognized-tools.ts            — read allowlist from docs/conventions/dependencies.md
-├── format-diagnose-summary.ts       — §11 diagnose stdout
+├── prompt.ts                        — readline-based slot + plugin prompts (single shared rl)
+├── format-diagnose-summary.ts       — §11 diagnose stdout (incl. files-overwrite + files-merge blocks)
 ├── format-retrofit-summary.ts       — §11 retrofit success stdout
 ├── diagnose-cmd.ts                  — `janus diagnose` entry: argparse → diagnose() → write JSON → print summary
-└── retrofit-cmd.ts                  — `janus retrofit` entry: argparse → load plan → execute() → print summary
+└── retrofit-cmd.ts                  — `janus retrofit` entry: argparse → load plan → execute() → print summary (incl. --dry-run per-step blocks)
+
+src/retrofit/errors.ts                — (Plan 1) `JanusError`, `MID_EXECUTION_CODES`. Plan 5 imports from here.
+src/retrofit/analyzer/unrecognized-tools-allowlist.ts
+                                      — (Plan 2) `loadUnrecognizedToolsAllowlist(janusRoot)`. Plan 5 calls this.
 
 bin/janus.js                          — adds `diagnose` and `retrofit` to COMMANDS map (dynamic import pattern)
 
-docs/conventions/dependencies.md     — adds `## Unrecognized tools (retrofit warning allowlist)` section
+docs/conventions/dependencies.md     — `## Unrecognized tools (retrofit warning allowlist)` section (added by Task 9)
 ```
 
 ---
@@ -159,30 +171,54 @@ Expected: PASS — 4/4.
 
 - [ ] **Step 4: Tests for prompt.ts**
 
+The prompt module exposes a single shared `readline.Interface` (created by `createPromptIO`) that both the slot-prompt callback and the plugin-confirmation callback consume. This avoids the dual-`createInterface` bug where two interfaces compete for the same `process.stdin` and the second one drops keystrokes.
+
 `src/retrofit/cli/prompt.test.ts`:
 
 ```ts
 import { Readable, Writable } from 'node:stream';
+import { createInterface } from 'node:readline';
 import { describe, expect, it } from 'vitest';
-import { makePromptCallback } from './prompt.js';
+import { makeSlotPromptCallback, makeConfirmPluginsCallback } from './prompt.js';
 
-describe('makePromptCallback', () => {
+function makeRl(input: Readable, output: Writable) {
+  return createInterface({ input, output });
+}
+
+describe('makeSlotPromptCallback', () => {
   it('returns the line typed by the user (without trailing newline)', async () => {
     const input = Readable.from(['foo\n']);
     const output = new Writable({ write(_chunk, _enc, cb) { cb(); } });
-    const prompt = makePromptCallback(input, output);
+    const rl = makeRl(input, output);
+    const prompt = makeSlotPromptCallback(rl);
     const v = await prompt('workload');
     expect(v).toBe('foo');
-    prompt.close();
+    rl.close();
   });
 
-  it('asks once per call and returns sequential lines', async () => {
+  it('asks once per call and returns sequential lines on the same shared interface', async () => {
     const input = Readable.from(['first\nsecond\n']);
     const output = new Writable({ write(_chunk, _enc, cb) { cb(); } });
-    const prompt = makePromptCallback(input, output);
+    const rl = makeRl(input, output);
+    const prompt = makeSlotPromptCallback(rl);
     expect(await prompt('a')).toBe('first');
     expect(await prompt('b')).toBe('second');
-    prompt.close();
+    rl.close();
+  });
+});
+
+describe('makeConfirmPluginsCallback (shares the rl with slot prompt)', () => {
+  it('reads y/n then additions on the same interface', async () => {
+    const input = Readable.from(['y\nbanana-claude@banana-claude-marketplace\n\n']);
+    const output = new Writable({ write(_chunk, _enc, cb) { cb(); } });
+    const rl = makeRl(input, output);
+    const confirm = makeConfirmPluginsCallback(rl);
+    const out = await confirm(['frontend-design@claude-plugins-official']);
+    expect(out).toEqual([
+      'frontend-design@claude-plugins-official',
+      'banana-claude@banana-claude-marketplace',
+    ]);
+    rl.close();
   });
 });
 ```
@@ -192,31 +228,47 @@ describe('makePromptCallback', () => {
 `src/retrofit/cli/prompt.ts`:
 
 ```ts
-import { createInterface, Interface } from 'node:readline';
+import { createInterface, type Interface } from 'node:readline';
 import type { Readable, Writable } from 'node:stream';
 import type { SlotKey } from '../resolvers/slots.js';
 
-export type PromptCallback = ((key: SlotKey) => Promise<string>) & { close: () => void };
-
-export function makePromptCallback(input: Readable = process.stdin, output: Writable = process.stdout): PromptCallback {
-  const rl = createInterface({ input, output });
-  const ask = async (key: SlotKey): Promise<string> => askLine(rl, `Slot value for ${key}: `);
-  (ask as PromptCallback).close = () => rl.close();
-  return ask as PromptCallback;
+export interface PromptIO {
+  rl: Interface;
+  close(): void;
 }
 
-export type ConfirmPluginsCallback = ((proposed: string[]) => Promise<string[]>) & { close: () => void };
-
-export function makeConfirmPluginsCallback(
+/**
+ * Construct a single shared readline interface for the duration of one CLI run.
+ * Both the slot-prompt and plugin-confirmation callbacks must consume THIS rl —
+ * creating two interfaces over the same stdin produces lost-keystroke bugs.
+ */
+export function createPromptIO(
   input: Readable = process.stdin,
   output: Writable = process.stdout,
-): ConfirmPluginsCallback {
+): PromptIO {
   const rl = createInterface({ input, output });
-  const confirm = async (proposed: string[]): Promise<string[]> => {
+  return {
+    rl,
+    close: () => rl.close(),
+  };
+}
+
+export type SlotPromptCallback = (key: SlotKey) => Promise<string>;
+
+export function makeSlotPromptCallback(rl: Interface): SlotPromptCallback {
+  return async (key: SlotKey): Promise<string> => askLine(rl, `Slot value for ${key}: `);
+}
+
+export type ConfirmPluginsCallback = (proposed: string[]) => Promise<string[]>;
+
+export function makeConfirmPluginsCallback(rl: Interface): ConfirmPluginsCallback {
+  return async (proposed: string[]): Promise<string[]> => {
+    const output: Writable = (rl as unknown as { output: Writable }).output;
+    let kept = proposed;
     if (proposed.length > 0) {
       output.write(`Proposed plugins:\n  ${proposed.join('\n  ')}\nEnable these? [Y/n]: `);
       const yn = (await askLine(rl, '')).trim().toLowerCase();
-      if (yn === 'n' || yn === 'no') return [];
+      if (yn === 'n' || yn === 'no') kept = [];
     } else {
       output.write('No plugins detected. ');
     }
@@ -227,10 +279,8 @@ export function makeConfirmPluginsCallback(
       if (!line) break;
       additions.push(line);
     }
-    return [...proposed, ...additions];
+    return [...kept, ...additions];
   };
-  (confirm as ConfirmPluginsCallback).close = () => rl.close();
-  return confirm as ConfirmPluginsCallback;
 }
 
 function askLine(rl: Interface, prompt: string): Promise<string> {
@@ -256,7 +306,12 @@ git commit -m "feat(retrofit): cli argparse + readline-based prompt callbacks"
 - Create: `src/retrofit/cli/diagnose-cmd.ts`
 - Create: `src/retrofit/cli/diagnose-cmd.test.ts`
 
-The summary printer lands in Task 4. This task wires argparse + diagnose engine + file write.
+The summary printer lands in Task 3. This task wires argparse + diagnose engine + file write.
+
+Exit-code contract for `runDiagnose(argv)`:
+- `0` — success: plan generated and written to disk.
+- `1` — pre-flight failure: any `JanusError` thrown by `diagnose()`, or CLI-input validation failures (missing required flag, malformed `--slot`, malformed `--plugin`).
+- `2` — internal error: any non-`JanusError` exception caught by the top-level try/catch.
 
 - [ ] **Step 1: Implement diagnose-cmd.ts**
 
@@ -267,10 +322,12 @@ import { writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
 import type { Plan } from '../types/index.js';
+import { JanusError } from '../errors.js';
 import { diagnose } from '../plan-builder/diagnose.js';
+import { loadUnrecognizedToolsAllowlist } from '../analyzer/unrecognized-tools-allowlist.js';
 import type { SlotKey } from '../resolvers/slots.js';
 import { parseArgs } from './argparse.js';
-import { makeConfirmPluginsCallback, makePromptCallback } from './prompt.js';
+import { createPromptIO, makeConfirmPluginsCallback, makeSlotPromptCallback } from './prompt.js';
 import { formatDiagnoseSummary } from './format-diagnose-summary.js';
 
 const DEFAULT_OUT = '.janus-retrofit.json';
@@ -278,72 +335,94 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const JANUS_ROOT = resolve(__dirname, '..', '..', '..'); // dist/retrofit/cli/ → janus root
 
 export async function runDiagnose(argv: string[]): Promise<number> {
-  if (process.platform === 'win32') {
-    console.error('janus retrofit is not supported on Windows in v0.1.');
-    return 1;
-  }
-  let args;
   try {
-    args = parseArgs(argv, {
-      string: ['archetype', 'out'],
-      boolean: ['non-interactive', 'help'],
-      collect: ['slot', 'plugin', 'no-plugin'],
-    });
-  } catch (e) {
-    console.error(`janus diagnose: ${(e as Error).message}`);
-    return 1;
-  }
-  if (args.help) {
-    printDiagnoseHelp();
-    return 0;
-  }
-  const archetype = (args.archetype as string | undefined) ?? '';
-  if (!archetype) {
-    console.error('janus diagnose: --archetype is required');
-    printDiagnoseHelp();
-    return 1;
-  }
-  const cliSlots: Partial<Record<SlotKey, string>> = {};
-  for (const entry of (args.slot as string[] | undefined) ?? []) {
-    const eq = entry.indexOf('=');
-    if (eq < 0) {
-      console.error(`janus diagnose: --slot expects key=value, got: ${entry}`);
+    if (process.platform === 'win32') {
+      console.error('janus retrofit is not supported on Windows in v0.1.');
       return 1;
     }
-    cliSlots[entry.slice(0, eq) as SlotKey] = entry.slice(eq + 1);
-  }
-  const cliPluginAdd = (args.plugin as string[] | undefined) ?? [];
-  const cliPluginRemove = (args['no-plugin'] as string[] | undefined) ?? [];
-  const nonInteractive = Boolean(args['non-interactive']);
-  const outPath = (args.out as string | undefined) ?? DEFAULT_OUT;
+    let args;
+    try {
+      args = parseArgs(argv, {
+        string: ['archetype', 'out'],
+        boolean: ['non-interactive', 'help'],
+        collect: ['slot', 'plugin', 'no-plugin'],
+      });
+    } catch (e) {
+      console.error(`janus diagnose: ${(e as Error).message}`);
+      return 1;
+    }
+    if (args.help) {
+      printDiagnoseHelp();
+      return 0;
+    }
+    const archetype = (args.archetype as string | undefined) ?? '';
+    if (!archetype) {
+      console.error('janus diagnose: --archetype is required');
+      printDiagnoseHelp();
+      return 1;
+    }
+    const cliSlots: Partial<Record<SlotKey, string>> = {};
+    for (const entry of (args.slot as string[] | undefined) ?? []) {
+      const eq = entry.indexOf('=');
+      if (eq < 0) {
+        console.error(`janus diagnose: --slot expects key=value, got: ${entry}`);
+        return 1;
+      }
+      cliSlots[entry.slice(0, eq) as SlotKey] = entry.slice(eq + 1);
+    }
+    const cliPluginAdd = (args.plugin as string[] | undefined) ?? [];
+    // Validate --plugin format up-front. Spec §11 says values look like
+    // `name@source`. We surface this as a CLI-input error (return 1) rather
+    // than letting it slip into diagnose() and surface as a generic JanusError.
+    for (const entry of cliPluginAdd) {
+      if (!entry.includes('@')) {
+        console.error(`janus diagnose: --plugin expects name@source, got: ${entry}`);
+        return 1;
+      }
+    }
+    const cliPluginRemove = (args['no-plugin'] as string[] | undefined) ?? [];
+    const nonInteractive = Boolean(args['non-interactive']);
+    const outPath = (args.out as string | undefined) ?? DEFAULT_OUT;
 
-  const prompt = nonInteractive ? undefined : makePromptCallback();
-  const confirmPlugins = nonInteractive ? undefined : makeConfirmPluginsCallback();
+    // Plan 2 owns the allowlist loader. We thread the result through to
+    // diagnose() — Plan 2 already extended analyze() to accept it, so no
+    // further wiring is required from Plan 5 inside the analyzer.
+    const unrecognizedToolsAllowlist = await loadUnrecognizedToolsAllowlist(JANUS_ROOT);
 
-  let plan: Plan;
-  try {
-    plan = await diagnose({
-      repoRoot: process.cwd(),
-      archetype,
-      janusRoot: JANUS_ROOT,
-      cliSlots,
-      cliPluginAdd,
-      cliPluginRemove,
-      nonInteractive,
-      ...(prompt ? { prompt } : {}),
-      ...(confirmPlugins ? { confirmPlugins } : {}),
-    });
+    const io = nonInteractive ? undefined : createPromptIO();
+    const prompt = io ? makeSlotPromptCallback(io.rl) : undefined;
+    const confirmPlugins = io ? makeConfirmPluginsCallback(io.rl) : undefined;
+
+    let plan: Plan;
+    try {
+      plan = await diagnose({
+        repoRoot: process.cwd(),
+        archetype,
+        janusRoot: JANUS_ROOT,
+        cliSlots,
+        cliPluginAdd,
+        cliPluginRemove,
+        nonInteractive,
+        unrecognizedToolsAllowlist,
+        ...(prompt ? { prompt } : {}),
+        ...(confirmPlugins ? { confirmPlugins } : {}),
+      });
+    } finally {
+      io?.close();
+    }
+
+    writeFileSync(outPath, `${JSON.stringify(plan, null, 2)}\n`);
+    console.log(formatDiagnoseSummary(plan, outPath));
+    return 0;
   } catch (e) {
-    console.error(`janus diagnose: ${(e as Error).message}`);
-    return 1;
-  } finally {
-    prompt?.close();
-    confirmPlugins?.close();
+    if (e instanceof JanusError) {
+      console.error(`janus diagnose: ${e.code}: ${e.message}`);
+      if (e.remediation) console.error(`  → ${e.remediation}`);
+      return 1;
+    }
+    console.error(`janus diagnose: internal error: ${(e as Error).message}`);
+    return 2;
   }
-
-  writeFileSync(outPath, `${JSON.stringify(plan, null, 2)}\n`);
-  console.log(formatDiagnoseSummary(plan, outPath));
-  return 0;
 }
 
 function printDiagnoseHelp(): void {
@@ -363,15 +442,54 @@ Options:
 }
 ```
 
-- [ ] **Step 2: Run typecheck (test for diagnose-cmd lands in Task 4)**
+- [ ] **Step 2: Tests for diagnose-cmd exit-code mapping**
+
+`src/retrofit/cli/diagnose-cmd.test.ts`:
+
+```ts
+import { describe, expect, it, vi } from 'vitest';
+
+vi.mock('../plan-builder/diagnose.js', () => ({
+  diagnose: vi.fn(),
+}));
+vi.mock('../analyzer/unrecognized-tools-allowlist.js', () => ({
+  loadUnrecognizedToolsAllowlist: vi.fn(async () => []),
+}));
+
+import { JanusError } from '../errors.js';
+import { diagnose } from '../plan-builder/diagnose.js';
+import { runDiagnose } from './diagnose-cmd.js';
+
+describe('runDiagnose exit-code mapping', () => {
+  it('returns 1 when --plugin lacks @ separator', async () => {
+    const code = await runDiagnose(['--archetype', 'generic-ts', '--non-interactive', '--plugin', 'banana-claude']);
+    expect(code).toBe(1);
+  });
+
+  it('returns 1 when diagnose() throws a JanusError', async () => {
+    vi.mocked(diagnose).mockRejectedValueOnce(new JanusError('SLOT_REQUIRED', 'slot missing'));
+    const code = await runDiagnose(['--archetype', 'generic-ts', '--non-interactive']);
+    expect(code).toBe(1);
+  });
+
+  it('returns 2 when diagnose() throws a non-JanusError (internal error fallback)', async () => {
+    vi.mocked(diagnose).mockRejectedValueOnce(new TypeError('boom'));
+    const code = await runDiagnose(['--archetype', 'generic-ts', '--non-interactive']);
+    expect(code).toBe(2);
+  });
+});
+```
+
+- [ ] **Step 3: Run typecheck (test for diagnose-cmd lands above)**
 
 ```bash
 pnpm typecheck
+pnpm test:unit -- diagnose-cmd.test
 ```
 
-Note: typecheck will fail until Task 4 lands `formatDiagnoseSummary`. Add a temporary placeholder or land Task 3 then Task 4 first. Recommended: implement Task 4 BEFORE committing Task 2.
+Note: typecheck will fail until Task 3 lands `formatDiagnoseSummary`. Recommended: implement Task 3 BEFORE committing Task 2.
 
-- [ ] **Step 3: Defer commit until Task 4 lands the formatter.**
+- [ ] **Step 4: Defer commit until Task 3 lands the formatter.**
 
 ---
 
@@ -381,9 +499,14 @@ Note: typecheck will fail until Task 4 lands `formatDiagnoseSummary`. Add a temp
 - Create: `src/retrofit/cli/format-diagnose-summary.ts`
 - Create: `src/retrofit/cli/format-diagnose-summary.test.ts`
 
-Per spec §11 stdout block.
+Per spec §11 stdout block. The formatter emits two transparency blocks the user can scan before committing to `janus retrofit`:
 
-- [ ] **Step 1: Write the failing test**
+1. **Files to be overwritten (N):** every `write_file` op that has a `pre_state_hash` (i.e., the file already exists; janus will overwrite it). Each row prints the relpath, a short hash prefix, and `→ janus`.
+2. **Files to be merged (N, additive — user content preserved):** every `claude_settings_merge` op (path = `.claude/settings.json`, suffix `→ settings merge per §8`), every `gitignore_merge` op (path = `.gitignore`, suffix `→ janus baseline block`), and every `write_file` op for `package.json` carrying a `pre_state_hash` (suffix `→ jq deep-merge`).
+
+`pre_state_hash` is formatted as the literal `sha256:` prefix followed by the first 12 hex chars + `…` (Unicode horizontal ellipsis). Both blocks are omitted entirely (no header) when their respective N is 0.
+
+- [ ] **Step 1: Write the failing test (snapshot — full output, not substring)**
 
 `src/retrofit/cli/format-diagnose-summary.test.ts`:
 
@@ -392,49 +515,164 @@ import { describe, expect, it } from 'vitest';
 import type { Plan } from '../types/index.js';
 import { formatDiagnoseSummary } from './format-diagnose-summary.js';
 
-const plan: Plan = {
-  schema_version: '1',
-  meta: { janus_version: '0.1.0', generated_at: '2026-05-05T00:00:00Z' },
-  payload: {
-    repo_root: '/x',
-    archetype: 'backend-functions',
-    target_branch: 'janus/retrofit',
-    slots: {
-      workload: 'foo',
-      description: 'd',
+const baseSlots = {
+  workload: 'foo',
+  description: 'd',
+  archetype: 'backend-functions',
+  github_org: 'pantheon-tech',
+  author: 'Daniel',
+  author_email: 'd@e.com',
+  node_version: '24',
+  license: 'MIT',
+  region: 'australiaeast',
+  template_version: 'v0.1.0',
+  year: '2026',
+  date: '2026-05-05',
+  base_branch: 'staging',
+} as const;
+
+const HASH = 'sha256:abcdef0123456789aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+
+function makePlan(overrides: Partial<Plan['payload']> = {}): Plan {
+  return {
+    schema_version: '1',
+    meta: { janus_version: '0.1.0', generated_at: '2026-05-05T00:00:00Z' },
+    payload: {
+      repo_root: '/x',
       archetype: 'backend-functions',
-      github_org: 'pantheon-tech',
-      author: 'Daniel',
-      author_email: 'd@e.com',
-      node_version: '24',
-      license: 'MIT',
-      region: 'australiaeast',
-      template_version: 'v0.1.0',
-      year: '2026',
-      date: '2026-05-05',
-      base_branch: 'staging',
+      target_branch: 'janus/retrofit',
+      slots: { ...baseSlots },
+      plugins: ['frontend-design@claude-plugins-official'],
+      prior_marker: null,
+      warnings: [
+        { code: 'MODULE_TYPE_CHANGE', message: 'pkg type cjs → module', evidence: ['package.json:type'] },
+      ],
+      steps: [],
+      ...overrides,
     },
-    plugins: ['frontend-design@claude-plugins-official'],
-    prior_marker: null,
-    warnings: [
-      { code: 'MODULE_TYPE_CHANGE', message: 'pkg type cjs → module', evidence: ['package.json:type'] },
-    ],
-    steps: [
-      { id: 'displace-eslint', category: 'displace-tools', title: '', commit_message: 'chore: e', preconditions: [], operations: [{ op: 'delete_file', path: '.eslintrc.json' }], commit_paths: ['.eslintrc.json'] },
-      { id: 'install-deps', category: 'install-deps', title: '', commit_message: 'chore: i', preconditions: [], operations: [{ op: 'shell', command: 'pnpm install', commit_paths: ['pnpm-lock.yaml'] }], commit_paths: ['pnpm-lock.yaml'] },
-    ],
-  },
-};
+  };
+}
 
 describe('formatDiagnoseSummary', () => {
-  it('mentions archetype, step count, slot summary, plugins, warnings', () => {
+  it('emits a canonical summary with overwrite + merge blocks (snapshot)', () => {
+    const plan = makePlan({
+      steps: [
+        {
+          id: 'apply-shared-overlay',
+          category: 'apply-overlay',
+          title: '',
+          commit_message: 'chore: o',
+          preconditions: [],
+          operations: [
+            { op: 'write_file', path: 'biome.jsonc', content: '{}', pre_state_hash: HASH },
+            { op: 'write_file', path: 'package.json', content: '{}', pre_state_hash: HASH },
+            { op: 'claude_settings_merge', path: '.claude/settings.json', patch: {} },
+            { op: 'gitignore_merge', path: '.gitignore', block: 'dist\n' },
+          ],
+          commit_paths: ['biome.jsonc', 'package.json', '.claude/settings.json', '.gitignore'],
+        },
+      ],
+    });
     const out = formatDiagnoseSummary(plan, '/tmp/x.json');
-    expect(out).toContain('janus diagnose v0.1.0 — backend-functions');
-    expect(out).toContain('Plan: 2 steps');
-    expect(out).toContain('workload=foo');
-    expect(out).toContain('frontend-design');
-    expect(out).toContain('MODULE_TYPE_CHANGE');
-    expect(out).toContain('Plan written to /tmp/x.json');
+    const expected = [
+      'janus diagnose v0.1.0 — backend-functions archetype',
+      '',
+      'Plan: 1 steps (1 apply-overlay)',
+      'Slots: workload=foo, archetype=backend-functions, github_org=pantheon-tech, author=Daniel <d@e.com>, node=24, region=australiaeast',
+      'Plugins: frontend-design',
+      '',
+      'Warnings: 1',
+      '  - MODULE_TYPE_CHANGE: pkg type cjs → module (package.json:type)',
+      '',
+      'Files to be overwritten (1):',
+      '  biome.jsonc                  sha256:abcdef012345… → janus',
+      '',
+      'Files to be merged (3, additive — user content preserved):',
+      '  package.json                 sha256:abcdef012345… → jq deep-merge',
+      '  .claude/settings.json        sha256:abcdef012345… → settings merge per §8',
+      '  .gitignore                   sha256:abcdef012345… → janus baseline block',
+      '',
+      'Plan written to /tmp/x.json',
+      'Next: review the plan, then run `janus retrofit --plan /tmp/x.json`',
+    ].join('\n');
+    expect(out).toBe(expected);
+  });
+
+  it('row in "Files to be overwritten" for write_file with pre_state_hash', () => {
+    const plan = makePlan({
+      warnings: [],
+      steps: [{
+        id: 's', category: 'apply-overlay', title: '', commit_message: 'c', preconditions: [],
+        operations: [{ op: 'write_file', path: 'biome.jsonc', content: '{}', pre_state_hash: HASH }],
+        commit_paths: ['biome.jsonc'],
+      }],
+    });
+    const out = formatDiagnoseSummary(plan, '/tmp/x.json');
+    expect(out).toContain('Files to be overwritten (1):');
+    expect(out).toContain('biome.jsonc');
+    expect(out).toContain('sha256:abcdef012345…');
+    expect(out).toContain('→ janus');
+  });
+
+  it('row in "Files to be merged" for claude_settings_merge', () => {
+    const plan = makePlan({
+      warnings: [],
+      steps: [{
+        id: 's', category: 'apply-overlay', title: '', commit_message: 'c', preconditions: [],
+        operations: [{ op: 'claude_settings_merge', path: '.claude/settings.json', patch: {} }],
+        commit_paths: ['.claude/settings.json'],
+      }],
+    });
+    const out = formatDiagnoseSummary(plan, '/tmp/x.json');
+    expect(out).toContain('Files to be merged (1, additive — user content preserved):');
+    expect(out).toContain('.claude/settings.json');
+    expect(out).toContain('→ settings merge per §8');
+  });
+
+  it('row in "Files to be merged" for gitignore_merge', () => {
+    const plan = makePlan({
+      warnings: [],
+      steps: [{
+        id: 's', category: 'apply-overlay', title: '', commit_message: 'c', preconditions: [],
+        operations: [{ op: 'gitignore_merge', path: '.gitignore', block: 'dist\n' }],
+        commit_paths: ['.gitignore'],
+      }],
+    });
+    const out = formatDiagnoseSummary(plan, '/tmp/x.json');
+    expect(out).toContain('Files to be merged (1, additive — user content preserved):');
+    expect(out).toContain('.gitignore');
+    expect(out).toContain('→ janus baseline block');
+  });
+
+  it('row in "Files to be merged" for write_file package.json with pre_state_hash', () => {
+    const plan = makePlan({
+      warnings: [],
+      steps: [{
+        id: 's', category: 'apply-overlay', title: '', commit_message: 'c', preconditions: [],
+        operations: [{ op: 'write_file', path: 'package.json', content: '{}', pre_state_hash: HASH }],
+        commit_paths: ['package.json'],
+      }],
+    });
+    const out = formatDiagnoseSummary(plan, '/tmp/x.json');
+    expect(out).toContain('Files to be merged (1, additive — user content preserved):');
+    expect(out).toContain('package.json');
+    expect(out).toContain('→ jq deep-merge');
+    // package.json with pre_state_hash MUST NOT also appear in "Files to be overwritten".
+    expect(out).not.toContain('Files to be overwritten');
+  });
+
+  it('omits both blocks entirely when N === 0', () => {
+    const plan = makePlan({
+      warnings: [],
+      steps: [{
+        id: 's', category: 'install-deps', title: '', commit_message: 'c', preconditions: [],
+        operations: [{ op: 'shell', command: 'pnpm install', commit_paths: ['pnpm-lock.yaml'] }],
+        commit_paths: ['pnpm-lock.yaml'],
+      }],
+    });
+    const out = formatDiagnoseSummary(plan, '/tmp/x.json');
+    expect(out).not.toContain('Files to be overwritten');
+    expect(out).not.toContain('Files to be merged');
   });
 });
 ```
@@ -445,6 +683,50 @@ describe('formatDiagnoseSummary', () => {
 
 ```ts
 import type { Plan } from '../types/index.js';
+
+interface OverlayRow {
+  path: string;
+  hash: string; // already short-formatted, e.g. "sha256:abcdef012345…"
+  suffix: string; // e.g. "janus" or "jq deep-merge"
+}
+
+const PATH_PAD = 28; // pad path column so hashes line up
+
+function shortHash(preStateHash: string | undefined): string {
+  if (!preStateHash) return '';
+  // Input shape per Plan 1: "sha256:<64hex>". Trim to first 12 hex chars + ellipsis.
+  const m = preStateHash.match(/^sha256:([0-9a-f]+)$/i);
+  if (!m) return preStateHash;
+  return `sha256:${m[1]!.slice(0, 12)}…`;
+}
+
+function row({ path, hash, suffix }: OverlayRow): string {
+  return `  ${path.padEnd(PATH_PAD)} ${hash} → ${suffix}`;
+}
+
+function collectOverlayBlocks(plan: Plan): { overwritten: OverlayRow[]; merged: OverlayRow[] } {
+  const overwritten: OverlayRow[] = [];
+  const merged: OverlayRow[] = [];
+  for (const step of plan.payload.steps) {
+    for (const op of step.operations) {
+      if (op.op === 'write_file') {
+        const wf = op as { op: 'write_file'; path: string; pre_state_hash?: string };
+        if (!wf.pre_state_hash) continue; // create of missing file; not an overwrite
+        const hash = shortHash(wf.pre_state_hash);
+        if (wf.path === 'package.json') {
+          merged.push({ path: wf.path, hash, suffix: 'jq deep-merge' });
+        } else {
+          overwritten.push({ path: wf.path, hash, suffix: 'janus' });
+        }
+      } else if (op.op === 'claude_settings_merge') {
+        merged.push({ path: '.claude/settings.json', hash: shortHash((op as { pre_state_hash?: string }).pre_state_hash), suffix: 'settings merge per §8' });
+      } else if (op.op === 'gitignore_merge') {
+        merged.push({ path: '.gitignore', hash: shortHash((op as { pre_state_hash?: string }).pre_state_hash), suffix: 'janus baseline block' });
+      }
+    }
+  }
+  return { overwritten, merged };
+}
 
 export function formatDiagnoseSummary(plan: Plan, outPath: string): string {
   const { meta, payload } = plan;
@@ -471,6 +753,19 @@ export function formatDiagnoseSummary(plan: Plan, outPath: string): string {
     }
     lines.push('');
   }
+
+  const { overwritten, merged } = collectOverlayBlocks(plan);
+  if (overwritten.length > 0) {
+    lines.push(`Files to be overwritten (${overwritten.length}):`);
+    for (const r of overwritten) lines.push(row(r));
+    lines.push('');
+  }
+  if (merged.length > 0) {
+    lines.push(`Files to be merged (${merged.length}, additive — user content preserved):`);
+    for (const r of merged) lines.push(row(r));
+    lines.push('');
+  }
+
   lines.push(`Plan written to ${outPath}`);
   lines.push('Next: review the plan, then run `janus retrofit --plan ' + outPath + '`');
   return lines.join('\n');
@@ -481,8 +776,9 @@ export function formatDiagnoseSummary(plan: Plan, outPath: string): string {
 
 ```bash
 pnpm test:unit -- format-diagnose-summary.test
+pnpm test:unit -- diagnose-cmd.test
 pnpm typecheck
-git add src/retrofit/cli/diagnose-cmd.ts src/retrofit/cli/format-diagnose-summary.ts src/retrofit/cli/format-diagnose-summary.test.ts
+git add src/retrofit/cli/diagnose-cmd.ts src/retrofit/cli/diagnose-cmd.test.ts src/retrofit/cli/format-diagnose-summary.ts src/retrofit/cli/format-diagnose-summary.test.ts
 git commit -m "feat(retrofit): cli/diagnose-cmd.ts + diagnose stdout summary formatter"
 ```
 
@@ -576,8 +872,17 @@ git commit -m "feat(retrofit): retrofit stdout summary formatter"
 
 **Files:**
 - Create: `src/retrofit/cli/retrofit-cmd.ts`
+- Create: `src/retrofit/cli/retrofit-cmd.test.ts`
 
 Argparse → load + validate plan → execute() → print summary. Handles `--branch` + auto-suggest soft-fail.
+
+Exit-code contract for `runRetrofit(argv)`:
+- `0` — success.
+- `1` — pre-flight failure: any `JanusError` whose code is NOT in `MID_EXECUTION_CODES`. Special case: `code === 'TARGET_BRANCH_EXISTS'` and no `--branch` override → soft-fail with the suggested next-free branch name printed.
+- `2` — mid-execution failure: any `JanusError` whose code IS in `MID_EXECUTION_CODES`. Plan 4's executor formats the error message to include the last-good SHA and a `git reset --hard <sha>` hint; we just print it verbatim.
+- `3` — internal error: any non-`JanusError` exception caught by the top-level try/catch.
+
+`--dry-run` does NOT print a single line; it iterates `plan.payload.steps` and prints one block per step per spec §11.
 
 - [ ] **Step 1: Implement retrofit-cmd.ts**
 
@@ -587,7 +892,7 @@ Argparse → load + validate plan → execute() → print summary. Handles `--br
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { execute } from '../executor/index.js';
-import { JanusError } from '../executor/errors.js';
+import { JanusError, MID_EXECUTION_CODES } from '../errors.js';
 import { suggestAvailableBranch } from '../executor/git.js';
 import { validatePlan } from '../schema/validate.js';
 import { parseArgs } from './argparse.js';
@@ -653,13 +958,23 @@ export async function runRetrofit(argv: string[]): Promise<number> {
     });
     if (dryRun) {
       console.log(`✓ Dry run passed. ${plan.payload.steps.length} steps would run on branch ${report.branch}.`);
+      console.log('');
+      for (let i = 0; i < plan.payload.steps.length; i++) {
+        const step = plan.payload.steps[i]!;
+        console.log(`Step ${i + 1}: ${step.id}`);
+        console.log(`  title: ${step.title}`);
+        console.log(`  ops: ${step.operations.length}`);
+        console.log(`  commit_paths: [${step.commit_paths.join(', ')}]`);
+      }
       return 0;
     }
     console.log(formatRetrofitSummary(report));
     return 0;
   } catch (e) {
     if (e instanceof JanusError && e.code === 'TARGET_BRANCH_EXISTS' && !branchOverride) {
-      // Auto-suggest a free branch (soft-fail per §11).
+      // Auto-suggest a free branch (soft-fail per §11). Soft-fail is exit 1
+      // — same as other pre-flight failures — but with a constructive
+      // suggestion the user can paste back as `--branch <name>`.
       try {
         const suggestion = suggestAvailableBranch(repoRoot, plan.payload.target_branch, noRemoteCheck);
         console.error(
@@ -671,6 +986,12 @@ export async function runRetrofit(argv: string[]): Promise<number> {
       return 1;
     }
     if (e instanceof JanusError) {
+      if (MID_EXECUTION_CODES.has(e.code)) {
+        // Plan 4's executor formats the message to include the last-good SHA
+        // and the `git reset --hard <sha>` hint. Print verbatim.
+        console.error(`janus retrofit: ${e.message}`);
+        return 2;
+      }
       console.error(`janus retrofit: ${e.code}: ${e.message}`);
       if (e.remediation) console.error(`  → ${e.remediation}`);
       return 1;
@@ -686,169 +1007,178 @@ function printRetrofitHelp(): void {
 Options:
   --plan <path>                 (required) plan JSON written by \`janus diagnose\`
   --branch <name>               override target branch (default from plan)
-  --dry-run                     run pre-flight + print step summary; no mutations
+  --dry-run                     run pre-flight + print per-step summary; no mutations
   --no-remote-check             skip \`git ls-remote\` for branch existence (offline)
   --help                        show this message
 `);
 }
 ```
 
-- [ ] **Step 2: Run typecheck + commit (no unit test — exercised by Task 9 end-to-end)**
+- [ ] **Step 2: Tests for exit-code mapping and dry-run per-step summary**
+
+`src/retrofit/cli/retrofit-cmd.test.ts`:
+
+```ts
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+vi.mock('../executor/index.js', () => ({
+  execute: vi.fn(),
+}));
+
+import { JanusError } from '../errors.js';
+import { execute } from '../executor/index.js';
+import { runRetrofit } from './retrofit-cmd.js';
+
+function writePlan(steps: Array<{ id: string; title: string; ops: number; commit_paths: string[] }>): string {
+  const dir = mkdtempSync(join(tmpdir(), 'rcmd-'));
+  const path = join(dir, 'plan.json');
+  const plan = {
+    schema_version: '1',
+    meta: { janus_version: '0.1.0', generated_at: '2026-05-05T00:00:00Z' },
+    payload: {
+      repo_root: dir,
+      archetype: 'generic-ts',
+      target_branch: 'janus/retrofit',
+      slots: {},
+      plugins: [],
+      prior_marker: null,
+      warnings: [],
+      steps: steps.map((s) => ({
+        id: s.id,
+        category: 'apply-overlay',
+        title: s.title,
+        commit_message: 'chore: x',
+        preconditions: [],
+        operations: Array.from({ length: s.ops }, () => ({ op: 'shell', command: 'true', commit_paths: [] })),
+        commit_paths: s.commit_paths,
+      })),
+    },
+  };
+  writeFileSync(path, JSON.stringify(plan));
+  return path;
+}
+
+describe('runRetrofit exit-code mapping', () => {
+  afterEach(() => vi.mocked(execute).mockReset());
+
+  it('returns 2 with last-good-sha message when execute() throws a MID_EXECUTION JanusError', async () => {
+    const plan = writePlan([{ id: 's1', title: 't', ops: 1, commit_paths: [] }]);
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.mocked(execute).mockRejectedValueOnce(
+      new JanusError(
+        'STEP_FAILED',
+        'shell op failed at step displace-eslint. Last-good sha=abc1234. Recover with: git reset --hard abc1234',
+      ),
+    );
+    const code = await runRetrofit(['--plan', plan, '--no-remote-check']);
+    expect(code).toBe(2);
+    const output = errSpy.mock.calls.map((c) => c.join(' ')).join('\n');
+    expect(output.toLowerCase()).toContain('last-good');
+    errSpy.mockRestore();
+  });
+
+  it('returns 1 when execute() throws a non-MID_EXECUTION JanusError', async () => {
+    const plan = writePlan([{ id: 's1', title: 't', ops: 1, commit_paths: [] }]);
+    vi.mocked(execute).mockRejectedValueOnce(new JanusError('DIRTY_WORKTREE', 'worktree dirty'));
+    const code = await runRetrofit(['--plan', plan, '--no-remote-check']);
+    expect(code).toBe(1);
+  });
+
+  it('returns 3 when execute() throws a non-JanusError', async () => {
+    const plan = writePlan([{ id: 's1', title: 't', ops: 1, commit_paths: [] }]);
+    vi.mocked(execute).mockRejectedValueOnce(new TypeError('boom'));
+    const code = await runRetrofit(['--plan', plan, '--no-remote-check']);
+    expect(code).toBe(3);
+  });
+});
+
+describe('runRetrofit --dry-run per-step summary', () => {
+  afterEach(() => vi.mocked(execute).mockReset());
+
+  it('prints one block per step with id, title, ops count, commit_paths', async () => {
+    const plan = writePlan([
+      { id: 'displace-eslint', title: 'remove eslint', ops: 2, commit_paths: ['.eslintrc.json', 'package.json'] },
+      { id: 'install-deps', title: 'pnpm install', ops: 1, commit_paths: ['pnpm-lock.yaml'] },
+    ]);
+    vi.mocked(execute).mockResolvedValueOnce({
+      branch: 'janus/retrofit',
+      total_steps: 2,
+      committed: [],
+      skipped: [],
+      empty: [],
+      warnings_count: 0,
+      last_good_sha: null,
+    } as never);
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const code = await runRetrofit(['--plan', plan, '--dry-run', '--no-remote-check']);
+    expect(code).toBe(0);
+    const out = logSpy.mock.calls.map((c) => c.join(' ')).join('\n');
+    expect(out).toContain('Step 1: displace-eslint');
+    expect(out).toContain('title: remove eslint');
+    expect(out).toContain('ops: 2');
+    expect(out).toContain('commit_paths: [.eslintrc.json, package.json]');
+    expect(out).toContain('Step 2: install-deps');
+    expect(out).toContain('commit_paths: [pnpm-lock.yaml]');
+    logSpy.mockRestore();
+  });
+});
+```
+
+- [ ] **Step 3: Run typecheck + tests + commit**
 
 ```bash
+pnpm test:unit -- retrofit-cmd.test
 pnpm typecheck
-git add src/retrofit/cli/retrofit-cmd.ts
+git add src/retrofit/cli/retrofit-cmd.ts src/retrofit/cli/retrofit-cmd.test.ts
 git commit -m "feat(retrofit): cli/retrofit-cmd.ts — argparse + execute + summary + branch auto-suggest"
 ```
 
 ---
 
-## Task 6: cli/unrecognized-tools.ts (read allowlist from docs)
+## Task 6: thread the unrecognized-tools allowlist through `runDiagnose`
 
 **Files:**
-- Create: `src/retrofit/cli/unrecognized-tools.ts`
-- Create: `src/retrofit/cli/unrecognized-tools.test.ts`
-- Modify: `docs/conventions/dependencies.md` — add the section.
-- Modify: `src/retrofit/analyzer/index.ts` — replace hardcoded allowlist set with the loader.
+- Modify: `src/retrofit/cli/diagnose-cmd.ts` — call Plan 2's loader; thread the result into `DiagnoseOpts`.
 
-Per spec §5, the allowlist lives at `docs/conventions/dependencies.md` under `## Unrecognized tools (retrofit warning allowlist)`. Reading docs at runtime keeps the allowlist editable as a one-PR docs change.
+Plan 2 owns `loadUnrecognizedToolsAllowlist(janusRoot: string): Promise<string[]>` (in `src/retrofit/analyzer/unrecognized-tools-allowlist.ts`) and Plan 2 has already extended `analyze()` to accept `opts?: { unrecognizedToolsAllowlist?: string[] }`. Plan 3 owns `diagnose()` and has already extended `DiagnoseOpts` with the matching `unrecognizedToolsAllowlist?: string[]` field that gets forwarded to `analyze()`. **Plan 5 does not modify the analyzer's signature itself** and does NOT introduce its own loader — Task 6 in this plan reduces to wiring a single async call inside `runDiagnose` and passing the result through.
 
-- [ ] **Step 1: Add the docs section**
+The docs-side change (adding the `## Unrecognized tools (retrofit warning allowlist)` heading and bullet list to `docs/conventions/dependencies.md`) is a docs change and lives in Task 9 alongside the README/CHANGELOG additions, not here.
 
-Append to `docs/conventions/dependencies.md` (create file if absent):
+- [ ] **Step 1: Wire `loadUnrecognizedToolsAllowlist` into `runDiagnose`**
 
-```markdown
-## Unrecognized tools (retrofit warning allowlist)
-
-This list controls which package.json devDependencies surface a `UNKNOWN_TOOL`
-warning during `janus diagnose`. Adding a tool here is a one-PR change; janus
-v0.1 does not migrate any of these.
-
-- lint-staged
-- rome
-- dprint
-- standard
-- xo
-- changeset
-- @changesets/cli
-- turbo
-- nx
-- parcel
-- rollup
-- esbuild
-- tsup
-```
-
-- [ ] **Step 2: Tests**
-
-`src/retrofit/cli/unrecognized-tools.test.ts`:
+This step is already reflected in the Task 2 source listing — verify it. The relevant lines in `src/retrofit/cli/diagnose-cmd.ts`:
 
 ```ts
-import { writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { mkdtempSync } from 'node:fs';
-import { describe, expect, it } from 'vitest';
-import { loadUnrecognizedToolsAllowlist } from './unrecognized-tools.js';
-
-describe('loadUnrecognizedToolsAllowlist', () => {
-  it('parses bullet list under the labeled heading', () => {
-    const dir = mkdtempSync(join(tmpdir(), 'allow-'));
-    const path = join(dir, 'dependencies.md');
-    writeFileSync(
-      path,
-      `# Some heading
-
-## Unrecognized tools (retrofit warning allowlist)
-
-These tools warn but don't block.
-
-- lint-staged
-- turbo
-
-## Next section
-
-- not-included
-`,
-    );
-    expect(loadUnrecognizedToolsAllowlist(path)).toEqual(['lint-staged', 'turbo']);
-  });
-
-  it('returns an empty list when section absent', () => {
-    const dir = mkdtempSync(join(tmpdir(), 'allow-'));
-    const path = join(dir, 'dependencies.md');
-    writeFileSync(path, '# nothing here');
-    expect(loadUnrecognizedToolsAllowlist(path)).toEqual([]);
-  });
-
-  it('returns an empty list when file missing', () => {
-    expect(loadUnrecognizedToolsAllowlist('/tmp/definitely-not-here.md')).toEqual([]);
-  });
-});
-```
-
-- [ ] **Step 3: Implement unrecognized-tools.ts**
-
-`src/retrofit/cli/unrecognized-tools.ts`:
-
-```ts
-import { existsSync, readFileSync } from 'node:fs';
-
-const HEADING = '## Unrecognized tools (retrofit warning allowlist)';
-
-export function loadUnrecognizedToolsAllowlist(path: string): string[] {
-  if (!existsSync(path)) return [];
-  const lines = readFileSync(path, 'utf8').split('\n');
-  const startIdx = lines.findIndex((l) => l.trim() === HEADING);
-  if (startIdx < 0) return [];
-  const out: string[] = [];
-  for (let i = startIdx + 1; i < lines.length; i++) {
-    const l = lines[i]!;
-    if (/^##\s/.test(l)) break; // next heading
-    const m = l.match(/^- (.+)$/);
-    if (m) out.push(m[1]!.trim());
-  }
-  return out;
-}
-```
-
-- [ ] **Step 4: Wire it into analyzer/index.ts**
-
-Replace the hardcoded `UNRECOGNIZED_TOOLS_ALLOWLIST` constant in `src/retrofit/analyzer/index.ts` with a function that takes the allowlist as a parameter. Update `analyze()` to accept an optional `allowlist?: string[]` parameter (defaulting to a small built-in fallback set so unit tests still work without docs paths). The CLI passes the loaded list:
-
-In `src/retrofit/analyzer/index.ts`, change:
-
-```ts
-export function analyze(repoRoot: string, allowlist?: string[]): Omit<RepoSnapshot, 'baseline_files'> {
-  // ... existing body ...
-  const unrecognized_tools = detectUnrecognizedTools(pmResult.package_json, allowlist ?? FALLBACK_ALLOWLIST);
-  // ...
-}
-
-const FALLBACK_ALLOWLIST = ['lint-staged']; // minimal — real list comes from docs at CLI time
-```
-
-And in `src/retrofit/plan-builder/diagnose.ts`, accept and pass `unrecognizedToolsAllowlist?: string[]` through to `analyze()`.
-
-In `src/retrofit/cli/diagnose-cmd.ts`, before calling `diagnose()`:
-
-```ts
-import { loadUnrecognizedToolsAllowlist } from './unrecognized-tools.js';
+import { loadUnrecognizedToolsAllowlist } from '../analyzer/unrecognized-tools-allowlist.js';
 // ...
-const allowlist = loadUnrecognizedToolsAllowlist(join(JANUS_ROOT, 'docs/conventions/dependencies.md'));
+const unrecognizedToolsAllowlist = await loadUnrecognizedToolsAllowlist(JANUS_ROOT);
+
 plan = await diagnose({
   // ... existing fields ...
-  unrecognizedToolsAllowlist: allowlist,
+  unrecognizedToolsAllowlist,
 });
 ```
 
-- [ ] **Step 5: Run, verify, commit**
+If Task 2 was implemented from the listing above, this is already done. If you're following the plan in strict order, jump back to Task 2's Step 1 and confirm those two lines are present.
+
+- [ ] **Step 2: Verify the call site typechecks against Plan 2's signature**
 
 ```bash
-pnpm test:unit -- unrecognized-tools.test
 pnpm typecheck
-git add src/retrofit/cli/unrecognized-tools.ts src/retrofit/cli/unrecognized-tools.test.ts src/retrofit/analyzer/index.ts src/retrofit/plan-builder/diagnose.ts src/retrofit/cli/diagnose-cmd.ts docs/conventions/dependencies.md
-git commit -m "feat(retrofit): unrecognized-tools allowlist read from docs/conventions/dependencies.md"
+```
+Expected: PASS — `DiagnoseOpts.unrecognizedToolsAllowlist?: string[]` accepts the awaited `string[]`.
+
+- [ ] **Step 3: Commit (only if a separate diff exists; usually folded into Task 2's commit)**
+
+```bash
+git status
+# If diagnose-cmd.ts already has the import+call from Task 2, no separate commit is needed.
+# Otherwise:
+git add src/retrofit/cli/diagnose-cmd.ts
+git commit -m "feat(retrofit): thread unrecognized-tools allowlist into runDiagnose"
 ```
 
 ---
@@ -1031,13 +1361,42 @@ git commit -m "test(retrofit): CLI end-to-end smoke test (diagnose → retrofit 
 
 ---
 
-## Task 9: README + CHANGELOG entry
+## Task 9: README + CHANGELOG + dependencies.md entries
 
 **Files:**
 - Modify: `README.md` — short usage section pointing at `npx @pantheon-tech/janus diagnose`/`retrofit`.
 - Create or modify: `CHANGELOG.md` — add `## Unreleased` entry summarizing the retrofit feature.
+- Modify: `docs/conventions/dependencies.md` — add the `## Unrecognized tools (retrofit warning allowlist)` heading + bullet list. This is the docs source for Plan 2's `loadUnrecognizedToolsAllowlist` loader.
 
-- [ ] **Step 1: Add usage to README.md**
+- [ ] **Step 1: Add the unrecognized-tools allowlist section to docs/conventions/dependencies.md**
+
+Append (create file if absent):
+
+```markdown
+## Unrecognized tools (retrofit warning allowlist)
+
+This list controls which package.json devDependencies surface a `UNKNOWN_TOOL`
+warning during `janus diagnose`. Adding a tool here is a one-PR change; janus
+v0.1 does not migrate any of these.
+
+- lint-staged
+- rome
+- dprint
+- standard
+- xo
+- changeset
+- @changesets/cli
+- turbo
+- nx
+- parcel
+- rollup
+- esbuild
+- tsup
+```
+
+Plan 2's `loadUnrecognizedToolsAllowlist(janusRoot)` reads this file at runtime, so the list is editable as a one-PR docs change with no code changes required.
+
+- [ ] **Step 2: Add usage to README.md**
 
 Append a new section near the existing scaffold/bootstrap usage (read README.md first to find the right place):
 
@@ -1059,7 +1418,7 @@ gh pr create --base staging
 ```
 ```
 
-- [ ] **Step 2: CHANGELOG entry**
+- [ ] **Step 3: CHANGELOG entry**
 
 `CHANGELOG.md` — append (or create with) `## Unreleased`:
 
@@ -1076,11 +1435,11 @@ gh pr create --base staging
 - 12+ fixture repos under `tests/fixtures/repos/` exercising every analyzer concern.
 ```
 
-- [ ] **Step 3: Commit**
+- [ ] **Step 4: Commit**
 
 ```bash
-git add README.md CHANGELOG.md
-git commit -m "docs: usage + changelog entry for janus diagnose/retrofit"
+git add README.md CHANGELOG.md docs/conventions/dependencies.md
+git commit -m "docs: usage + changelog + unrecognized-tools allowlist for janus diagnose/retrofit"
 ```
 
 ---
@@ -1129,15 +1488,20 @@ Plan 5 complete. End state:
 
 1. **Spec coverage:**
    - §11 CLI surface (both subcommands, all flags, default `--out`, exit codes) → Tasks 2, 5
-   - §11 diagnose stdout summary → Task 3
+   - §11 diagnose stdout summary including the new "Files to be overwritten" and "Files to be merged" blocks → Task 3 (snapshot test asserts the blocks appear with `→ janus`, `→ jq deep-merge`, `→ settings merge per §8`, `→ janus baseline block` suffixes; both blocks omitted when N === 0)
+   - §11 retrofit `--dry-run` per-step summary (id, title, ops count, commit_paths) → Task 5 (test asserts each block)
    - §9 retrofit stdout summary → Task 4
-   - §5a interactive slot prompt + non-interactive failure surfacing → Task 1 + Task 2
+   - §5a interactive slot prompt + non-interactive failure surfacing → Task 1 + Task 2 (single shared `readline.Interface` via `createPromptIO`; both callbacks consume the same `rl`)
    - §5b plugin confirmation prompt → Task 1
-   - §5 unrecognized_tools allowlist source → Task 6
+   - §5 unrecognized_tools allowlist source → Task 6 (uses Plan 2's `loadUnrecognizedToolsAllowlist`; **no analyzer surface change in Plan 5**); the docs heading + bullet list lives in Task 9
    - §13 Windows out-of-scope → first-line check in Tasks 2, 5
-2. **Backward compatibility:** existing `bootstrap`/`scaffold`/`check` subcommands untouched. No bash scripts modified by Plan 5.
-3. **Build dependency:** `bin/janus.js` now requires `dist/` to exist for diagnose/retrofit. Print a clear error if absent (Task 7 step 1). `pnpm install` does NOT auto-build; package consumers get `dist/` from the npm tarball (which Plan 1 wired into `files[]`).
-4. **TODO follow-ups (not blocking v0.1):**
+2. **Exit codes wired correctly:**
+   - `runDiagnose`: `0` success, `1` JanusError / CLI-input failure, `2` non-JanusError fallback (top-level catch).
+   - `runRetrofit`: `0` success, `1` non-MID_EXECUTION JanusError or TARGET_BRANCH_EXISTS soft-fail, `2` MID_EXECUTION JanusError (message printed verbatim — includes Plan 4's last-good-SHA hint), `3` non-JanusError fallback.
+3. **Imports from sibling plans:** `JanusError` and `MID_EXECUTION_CODES` from `'../errors.js'` (Plan 1); `loadUnrecognizedToolsAllowlist` from `'../analyzer/unrecognized-tools-allowlist.js'` (Plan 2). No analyzer or plan-builder signature changes initiated by Plan 5.
+4. **Backward compatibility:** existing `bootstrap`/`scaffold`/`check` subcommands untouched. No bash scripts modified by Plan 5.
+5. **Build dependency:** `bin/janus.js` now requires `dist/` to exist for diagnose/retrofit. Print a clear error if absent (Task 7 step 1). `pnpm install` does NOT auto-build; package consumers get `dist/` from the npm tarball (which Plan 1 wired into `files[]`).
+6. **TODO follow-ups (not blocking v0.1):**
    - `WARN_OVERWRITE_USER_KIT` warnings for skills/hooks overlay are still surfaced only in the run report, not in the diagnose summary. Future enrichment could compute and display them at diagnose time.
    - Resolved-slot prompt re-prompt loop on validation failure: currently 3 attempts then throw (Plan 2 Task 12). Plan 5's prompt callback respects this. UX consideration: print the validation reason between prompts. Filed as enhancement.
    - Manual dogfood findings (Task 10 step 4) drive the v0.2 backlog.

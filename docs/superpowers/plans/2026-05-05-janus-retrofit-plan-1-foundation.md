@@ -24,7 +24,9 @@
 | `src/retrofit/schema/marker.schema.json` | JSON Schema 2020-12 for the on-disk `.janus.json` marker format |
 | `src/retrofit/schema/validate.ts` | Ajv wrapper exporting `validatePlan(input)`, `validateMarker(input)` with typed return discriminated unions |
 | `src/retrofit/schema/validate.test.ts` | Vitest tests covering valid + every documented invalid case |
-| `src/retrofit/types/index.ts` | TypeScript types matching the schemas: `Plan`, `JanusMarker`, every `Operation` variant, `Warning`, `Step`, etc. |
+| `src/retrofit/types/index.ts` | TypeScript types matching the schemas: `Plan`, `JanusMarker`, every `Operation` variant, `Warning`, `Step`, etc. Also owns the `SHELL_WHITELIST` const + derived `ShellCommand` type. |
+| `src/retrofit/errors.ts` | Central `JanusError` class, `ERROR_CODES` const, and `MID_EXECUTION_CODES` set used by Plans 2-5 |
+| `src/retrofit/errors.test.ts` | Vitest tests for the JanusError module |
 | `tests/fixtures/plans/minimal-valid.json` | Smallest possible valid plan |
 | `tests/fixtures/plans/invalid-missing-schema-version.json` | Negative fixture — missing required field |
 | `tests/fixtures/plans/invalid-bad-op.json` | Negative fixture — unknown op in `operations[]` |
@@ -35,7 +37,7 @@
 | Path | Change |
 |---|---|
 | `package.json` | Add devDeps (typescript, vitest, ajv, @types/node); add scripts (build, typecheck, test:unit); update test script to chain bash + vitest; add `dist` to `files[]` |
-| `biome.jsonc` | Extend lint/format scope to include `src/` |
+| `biome.jsonc` | Add `!tests/fixtures/**` to `files.includes` so deliberately-malformed negative fixtures don't fail biome |
 | `.gitignore` | Add `dist/`, `coverage/`, `*.tsbuildinfo` |
 
 **Out of scope for Plan 1:** `bin/janus.js` (untouched until Plan 5 wires up the CLI subcommands), `RepoSnapshot`/`SlotMap`/`PluginSet` types (defined when their owning module lands in Plans 2/3).
@@ -58,7 +60,7 @@ Replace the `devDependencies` block and the `scripts` block.
     "format": "biome format --write biome.jsonc package.json scripts bin src",
     "check": "biome check --write biome.jsonc package.json scripts bin src",
     "typecheck": "tsc --noEmit",
-    "build": "tsc",
+    "build": "tsc && cp -r src/retrofit/schema dist/retrofit/",
     "test:unit": "vitest run",
     "test": "bash tests/scaffold-smoke-test.sh && bash tests/bootstrap-smoke-test.sh && pnpm test:unit",
     "prepare": "lefthook install || true"
@@ -76,6 +78,8 @@ Replace the `devDependencies` block and the `scripts` block.
   }
 }
 ```
+
+Note on the `build` script: `tsc` does NOT copy `.json` files into `dist/`. The `cp -r src/retrofit/schema dist/retrofit/` step is required so that downstream consumers can `import('./dist/retrofit/schema/plan.schema.json', { with: { type: 'json' } })` and so the vendored Ajv loader can resolve the schema file at runtime.
 
 Also add `"dist"` to the `files[]` array (preserve existing entries):
 
@@ -102,10 +106,40 @@ Expected: lockfile updates, `node_modules/typescript`, `node_modules/vitest`, `n
 Run: `pnpm typecheck`
 Expected: FAIL with `error TS5057: Cannot find a tsconfig.json file at the specified directory: '.'` or similar — confirms the script is wired but config is missing.
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 4: Update `biome.jsonc` to cover the new tree**
+
+The "Files modified" table above lists `biome.jsonc`; this step makes the actual edit. Two changes are needed in `biome.jsonc`'s `files.includes` array:
+
+1. The existing `**` glob already pulls in `src/retrofit/**` (no change required for the positive include — the lint scripts in this `package.json` also pass `src` explicitly).
+2. Add an exclude for `tests/fixtures/**` so the deliberately-malformed negative fixtures (`invalid-bad-op.json`, `invalid-missing-schema-version.json`) do not fail biome lint or formatting.
+
+Patch `biome.jsonc` `files.includes` to:
+
+```jsonc
+"includes": [
+  "**",
+  "!**/node_modules",
+  "!**/dist",
+  "!**/build",
+  "!**/out",
+  "!**/coverage",
+  "!**/.next",
+  "!**/.astro",
+  "!**/.claude",
+  "!**/*.min.js",
+  "!**/pnpm-lock.yaml",
+  "!templates",
+  "!tests/fixtures/**"
+]
+```
+
+Run: `pnpm check`
+Expected: PASS — biome ignores `tests/fixtures/**` and accepts everything else.
+
+- [ ] **Step 5: Commit**
 
 ```bash
-git add package.json pnpm-lock.yaml
+git add package.json pnpm-lock.yaml biome.jsonc
 git commit -m "chore(retrofit): add typescript, vitest, ajv devDeps for retrofit foundation"
 ```
 
@@ -503,25 +537,15 @@ git commit -m "chore(retrofit): add vitest config for src and tests glob"
 
 - [ ] **Step 2: Verify build still passes**
 
+The Task-1 `build` script already includes `cp -r src/retrofit/schema dist/retrofit/`, so the JSON files appear in `dist/` after `tsc` runs.
+
 Run: `pnpm build`
-Expected: PASS — `dist/retrofit/schema/plan.schema.json` is created (TypeScript copies `.json` files because of `resolveJsonModule` in `tsconfig.base.json` and `include: ["src/**/*.json"]`).
+Expected: PASS. Then assert `dist/retrofit/schema/plan.schema.json` exists (e.g. `ls dist/retrofit/schema/plan.schema.json`).
 
-If `dist/` doesn't contain the JSON file: TypeScript's `tsc` does NOT copy JSON by default. Instead, after Step 5 (validate.ts) which imports the JSON, `tsc` will emit `dist/retrofit/schema/plan.schema.json` only if `resolveJsonModule` is set (it is, from `tsconfig.base.json`). For the schema files to actually land in `dist/`, we need a small build orchestration: run `tsc && cp -r src/retrofit/schema/*.json dist/retrofit/schema/`. Update Task 1's `build` script to: `"build": "tsc && mkdir -p dist/retrofit/schema && cp src/retrofit/schema/*.json dist/retrofit/schema/"`.
-
-- [ ] **Step 3: Update build script if needed (if Step 2 didn't produce the JSON in dist/)**
-
-Edit `package.json` `scripts.build`:
-
-```json
-"build": "tsc && mkdir -p dist/retrofit/schema && cp src/retrofit/schema/*.json dist/retrofit/schema/"
-```
-
-Re-run `pnpm build`. Verify `ls dist/retrofit/schema/` shows `plan.schema.json`.
-
-- [ ] **Step 4: Commit**
+- [ ] **Step 3: Commit**
 
 ```bash
-git add src/retrofit/schema/plan.schema.json package.json
+git add src/retrofit/schema/plan.schema.json
 git commit -m "chore(retrofit): add plan.schema.json (Plan format spec §7)"
 ```
 
@@ -676,11 +700,13 @@ export type StepCategory =
 
 export type Sha256 = `sha256:${string}`;
 
-export type ShellCommand =
-  | 'pnpm install'
-  | 'pnpm dedupe'
-  | 'git config --unset core.hooksPath'
-  | 'find .git/hooks -type f -not -name "*.sample" -delete';
+export const SHELL_WHITELIST = [
+  'pnpm install',
+  'pnpm dedupe',
+  'git config --unset core.hooksPath',
+  'find .git/hooks -type f -not -name "*.sample" -delete',
+] as const;
+export type ShellCommand = (typeof SHELL_WHITELIST)[number];
 
 export type Operation =
   | { op: 'write_file'; path: string; content: string; mode?: number; pre_state_hash?: Sha256; overwrite?: boolean }
@@ -753,7 +779,108 @@ git commit -m "chore(retrofit): add Plan and JanusMarker types matching schemas"
 
 ---
 
-## Task 7: Write the failing validator test (TDD red)
+## Task 7: Add central JanusError module
+
+**Files:**
+- Create: `src/retrofit/errors.test.ts`
+- Create: `src/retrofit/errors.ts`
+
+- [ ] **Step 1: Write the failing test**
+
+`src/retrofit/errors.test.ts`:
+
+```ts
+import { describe, expect, it } from 'vitest';
+import { JanusError, MID_EXECUTION_CODES } from './errors.js';
+
+describe('JanusError', () => {
+  it('exposes the code passed to the constructor', () => {
+    const err = new JanusError('NOT_IN_GIT_REPO', 'msg');
+    expect(err.code).toBe('NOT_IN_GIT_REPO');
+  });
+
+  it('exposes the optional remediation string', () => {
+    const err = new JanusError('NOT_IN_GIT_REPO', 'msg', 'fix it');
+    expect(err.remediation).toBe('fix it');
+  });
+});
+
+describe('MID_EXECUTION_CODES', () => {
+  it('contains mid-execution-only codes', () => {
+    expect(MID_EXECUTION_CODES.has('PRE_STATE_HASH_MISMATCH')).toBe(true);
+  });
+
+  it('does not contain pre-flight codes', () => {
+    expect(MID_EXECUTION_CODES.has('NOT_IN_GIT_REPO')).toBe(false);
+  });
+});
+```
+
+- [ ] **Step 2: Run vitest, expect FAIL**
+
+Run: `pnpm test:unit`
+Expected: FAIL with `Failed to resolve import "./errors.js"` — module does not exist yet.
+
+- [ ] **Step 3: Create `src/retrofit/errors.ts`**
+
+`src/retrofit/errors.ts`:
+
+```ts
+export const ERROR_CODES = [
+  // diagnose pre-flight (#1-#8)
+  'NOT_IN_GIT_REPO', 'INVALID_ARCHETYPE', 'MARKER_INVALID', 'TOOL_MISSING',
+  'HAS_SUBMODULES', 'TARGET_PATH_SYMLINK', 'CASE_COLLISION',
+  'INVOKED_FROM_WORKSPACE_MEMBER',
+  // retrofit pre-flight (#9-#16)
+  'PLAN_FILE_INVALID', 'PLAN_SCHEMA_INVALID', 'SCHEMA_VERSION_MISMATCH',
+  'REPO_ROOT_MISMATCH', 'TREE_DIRTY', 'HEAD_DETACHED',
+  'TARGET_BRANCH_EXISTS', 'BRANCH_SUGGESTION_EXHAUSTED', 'REMOTE_UNREACHABLE',
+  'INVOKED_FROM_WORKTREE',
+  // execution
+  'PRE_STATE_HASH_MISMATCH', 'PRE_STATE_HASH_MISSING_FILE',
+  'EXTRANEOUS_FILE_MODIFICATIONS', 'GITIGNORE_BLOCK_MALFORMED',
+  'CLAUDE_PRE_JANUS_EXISTS', 'CLAUDE_TEMPLATE_UNEXPECTED_HEAD',
+  'SHELL_NOT_WHITELISTED', 'COMMIT_HOOK_FAILED',
+  // resolvers (Plan 2 throws these)
+  'SLOT_VALIDATION_FAILED', 'SLOT_UNRESOLVED_NON_INTERACTIVE',
+  // generic
+  'INTERNAL_ERROR',
+] as const;
+export type ErrorCode = (typeof ERROR_CODES)[number];
+export class JanusError extends Error {
+  constructor(
+    public readonly code: ErrorCode,
+    message: string,
+    public readonly remediation?: string,
+  ) {
+    super(message);
+    this.name = 'JanusError';
+  }
+}
+// Plan 5's retrofit-cmd uses this to map to exit code 2.
+export const MID_EXECUTION_CODES: ReadonlySet<ErrorCode> = new Set([
+  'PRE_STATE_HASH_MISMATCH', 'PRE_STATE_HASH_MISSING_FILE',
+  'EXTRANEOUS_FILE_MODIFICATIONS', 'GITIGNORE_BLOCK_MALFORMED',
+  'CLAUDE_PRE_JANUS_EXISTS', 'CLAUDE_TEMPLATE_UNEXPECTED_HEAD',
+  'SHELL_NOT_WHITELISTED', 'COMMIT_HOOK_FAILED',
+]);
+```
+
+- [ ] **Step 4: Run vitest, expect PASS**
+
+Run: `pnpm test:unit`
+Expected: PASS — all four assertions in `errors.test.ts` green.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/retrofit/errors.ts src/retrofit/errors.test.ts
+git commit -m "feat: central JanusError + ERROR_CODES + MID_EXECUTION_CODES"
+```
+
+---
+
+## Task 8: Write the failing validator test (TDD red)
 
 **Files:**
 - Create: `tests/fixtures/plans/minimal-valid.json`
@@ -932,7 +1059,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { validateMarker, validatePlan } from './validate.js';
 
-const FIXTURES = join(__dirname, '..', '..', '..', 'tests', 'fixtures');
+const FIXTURES = join(import.meta.dirname, '..', '..', '..', 'tests', 'fixtures');
 
 function loadJson(relPath: string): unknown {
   return JSON.parse(readFileSync(join(FIXTURES, relPath), 'utf8'));
@@ -979,12 +1106,6 @@ describe('validateMarker', () => {
 });
 ```
 
-Note on `__dirname`: vitest under ESM. Use `import.meta.dirname` (Node 20.11+) instead of `__dirname`. Replace the `__dirname` line with:
-
-```ts
-const FIXTURES = join(import.meta.dirname, '..', '..', '..', 'tests', 'fixtures');
-```
-
 - [ ] **Step 6: Run the test to verify it fails**
 
 Run: `pnpm test:unit`
@@ -999,7 +1120,7 @@ git commit -m "test(retrofit): add validator fixtures and failing tests"
 
 ---
 
-## Task 8: Implement validate.ts (TDD green)
+## Task 9: Implement validate.ts (TDD green)
 
 **Files:**
 - Create: `src/retrofit/schema/validate.ts`
@@ -1077,7 +1198,7 @@ git commit -m "feat(retrofit): add Ajv-backed schema validators for plan and mar
 
 ---
 
-## Task 9: Wire dist/ into npm package, verify end-to-end
+## Task 10: Wire dist/ into npm package, verify end-to-end
 
 **Files:**
 - Modify: `package.json` (already updated in Task 1; verify `files[]` includes `dist`)
@@ -1144,9 +1265,9 @@ After completing all tasks above, verify:
 1. **Spec coverage:**
    - §7 (Plan format) → covered by `plan.schema.json` (Task 4) and `Plan` type (Task 6)
    - §10 (Marker format) → covered by `marker.schema.json` (Task 5) and `JanusMarker` type (Task 6)
-   - Validator at retrofit pre-flight #9 → `validatePlan` exists (Task 8); the pre-flight call site is Plan 4's responsibility
+   - Validator at retrofit pre-flight #9 → `validatePlan` exists (Task 9); the pre-flight call site is Plan 4's responsibility
    - Determinism contract on `payload` → schema validates structure; hashing of `payload` is Plan 3's responsibility (plan-builder)
-   - Op vocabulary closed-set rule → schema's `Operation.oneOf` lists exactly the 12 ops; unknown ops rejected (Task 7's `invalid-bad-op.json` test proves it)
+   - Op vocabulary closed-set rule → schema's `Operation.oneOf` lists exactly the 12 ops; unknown ops rejected (Task 8's `invalid-bad-op.json` test proves it)
 
 2. **No placeholders:** all step bodies contain runnable commands or full code blocks. No `TODO`, no "implement appropriately."
 
@@ -1165,5 +1286,11 @@ Plan 2 will build on this foundation:
 - `src/retrofit/plan-builder/overlay-tree.ts` — the rendered overlay tree mirroring scaffold.sh
 - `tests/fixtures/repos/` — ~12 fixture repos for analyzer + slot tests
 - New types: `RepoSnapshot`, `BaselineFileStatus`, `ClaudeKitSnapshot`, etc.
+
+What later plans (2-5) consume from Plan 1:
+
+- `src/retrofit/types/index.ts` — `Plan`, `JanusMarker`, `Operation`, `Step`, `Warning`, `SlotMap`, `PluginSet`, `Archetype`, `Sha256`, plus the `SHELL_WHITELIST` const and derived `ShellCommand` type. The const is the single source of truth; every plan that builds or executes a `shell` op imports `SHELL_WHITELIST` from this module rather than redeclaring the literals.
+- `src/retrofit/schema/validate.ts` — `validatePlan`, `validateMarker` for runtime checks (Plan 4's pre-flight #9, Plan 5's CLI loaders).
+- `src/retrofit/errors.ts` — `JanusError` class, `ERROR_CODES` const, `ErrorCode` type, and the `MID_EXECUTION_CODES` set. Plans 2-5 throw `JanusError` with codes drawn from `ERROR_CODES`; Plan 5's `retrofit-cmd` uses `MID_EXECUTION_CODES` to map mid-execution failures to exit code 2.
 
 End-state: `RepoSnapshot` for any of the fixture repos, slot resolution end-to-end against fixtures, overlay tree byte-equal to scaffold.sh's output for a known archetype. Still no user-facing CLI behavior.

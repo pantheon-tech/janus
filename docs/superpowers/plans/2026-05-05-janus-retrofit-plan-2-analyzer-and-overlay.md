@@ -16,31 +16,34 @@
 
 | Spec § | Plan 2 deliverable |
 |---|---|
-| §3 architecture box "analyzer" | `src/retrofit/analyzer/{git-state,package-manager,displaced-tools,claude-kit,plugin-evidence,index}.ts` |
+| §3 architecture box "analyzer" | `src/retrofit/analyzer/{git-state,package-manager,displaced-tools,claude-kit,plugin-evidence,unrecognized-tools-allowlist,index}.ts` |
 | §3 architecture box "slot+plugin resolver" | `src/retrofit/resolvers/{slot-validation,slots,plugins}.ts` |
 | §5 analyzer detection rules | one task per per-concern module + fixture coverage |
 | §5 `RepoSnapshot` field set | extended types in Task 1 |
-| §5 `BaselineFileStatus` (computed against overlay tree) | `analyzer/baseline-diff.ts` (Task 19) |
-| §5a slot resolution source order | Task 12 |
-| §5a slot validation regex table | Task 11 |
-| §5a `--non-interactive` failure modes | Task 12 step 3 |
-| §5b plugin auto-detect evidence | Task 9 + Task 13 |
-| §5b `--plugin` / `--no-plugin` interaction | Task 13 |
-| §6 step 1 (walk shared) | Task 14 (walker) + Task 15 (mo) |
-| §6 step 2 (walk archetype, jq merge package.json, .env.example append) | Task 16 |
-| §6 step 1 `.gitignore` special case | Task 17 |
-| §6 step 4 user-side package.json merge | Task 18 |
-| §6 step 1 mode preservation (hooks 0755) | Task 14 step 1 + Task 16 |
-| §6 step 2 archetype `README.md` skip | Task 16 step 1 |
-| §6 step 2 `.exclude` `is_excluded()` semantics | Task 14 step 1 |
-| §12 ~12 fixture repos | Tasks 3 + 6 + 20 |
+| §5 `BaselineFileStatus` (computed against overlay tree) | `analyzer/baseline-diff.ts` (Task 20) |
+| §5 unrecognized-tools allowlist reader | `analyzer/unrecognized-tools-allowlist.ts` (Task 11) — exported helper consumed by Plan 5 CLI |
+| §5a slot resolution source order | Task 13 |
+| §5a slot validation regex table | Task 12 |
+| §5a `--non-interactive` failure modes | Task 13 step 3 |
+| §5b plugin auto-detect evidence | Task 9 + Task 14 |
+| §5b `--plugin` / `--no-plugin` interaction | Task 14 |
+| §6 step 1 (walk shared) | Task 15 (walker) + Task 16 (mo) |
+| §6 step 2 (walk archetype, jq merge package.json, .env.example append) | Task 17 |
+| §6 step 1 `.gitignore` special case | Task 18 |
+| §6 step 4 user-side package.json merge | Task 19 |
+| §6 step 1 mode preservation (hooks 0755) | Task 15 step 1 + Task 17 |
+| §6 step 2 archetype `README.md` skip | Task 17 step 1 |
+| §6 step 2 `.exclude` `is_excluded()` semantics | Task 15 step 1 |
+| §12 ~12 fixture repos | Tasks 3 + 6 + 21 |
 | §15 file layout | end-state matches the informational sketch in §15 |
+
+**Note on task numbering:** Task 11 is the new `unrecognized-tools-allowlist.ts` helper (inserted between the original Task 10 analyzer composition and Task 11 slot validation). Subsequent tasks 12 through 22 correspond one-for-one to the previous numbering shifted by +1.
 
 ---
 
 ## File structure
 
-**New types in `src/retrofit/types/index.ts`:** `PackageJsonSnapshot`, `DisplacedTool`, `WorkflowFile`, `PluginEvidence`, `ClaudeKitSnapshot`, `BaselineFileStatus`, `RepoSnapshot`, `OverlayEntry`, `OverlayTree`, `GitignoreOverlayMarker`. Each has one clear responsibility and is mirrored only against §5 / §6 (no analyzer-private state in the type).
+**New types in `src/retrofit/types/index.ts`:** `PackageJsonSnapshot`, `DisplacedTool`, `WorkflowFile`, `PluginEvidence`, `ClaudeKitSnapshot`, `BaselineFileStatus`, `RepoSnapshot`, `OverlayEntry`, `OverlayTree`, `GitignoreOverlayMarker`, `OverlayResult`. Each has one clear responsibility and is mirrored only against §5 / §6 (no analyzer-private state in the type).
 
 **New code modules:**
 
@@ -53,7 +56,8 @@ src/retrofit/
 │   ├── claude-kit.ts         — claude_kit
 │   ├── plugin-evidence.ts    — plugin_evidence
 │   ├── baseline-diff.ts      — (repoRoot, OverlayTree) → BaselineFileStatus[]
-│   └── index.ts              — analyze(): returns Omit<RepoSnapshot, 'baseline_files'>
+│   ├── unrecognized-tools-allowlist.ts — loadUnrecognizedToolsAllowlist(janusRoot): docs reader, exported for Plan 5 CLI
+│   └── index.ts              — analyze(repoRoot, opts?): returns Omit<RepoSnapshot, 'baseline_files'>
 ├── resolvers/
 │   ├── slot-validation.ts    — regex rules from §5a
 │   ├── slots.ts              — resolveSlots() per §5a source order
@@ -88,7 +92,7 @@ Fixture directories contain literal files; the materializer copies the tree into
 **Modified files:**
 
 - `src/retrofit/types/index.ts` (Task 1) — add Plan 2 types.
-- `package.json` (Task 22 if biome reformats anything) — formatting fixups only.
+- `package.json` (Task 23 if biome reformats anything) — formatting fixups only.
 
 ---
 
@@ -202,6 +206,18 @@ export type OverlayTree = Map<string, OverlayEntry>;
 export type GitignoreOverlayMarker = {
   kind: 'gitignore_merge';
   lines: string[]; // janus's lines, in source order, fixed for determinism
+};
+
+// Composite return value of `buildOverlayTree`. Plan 2 OWNS this shape.
+//   - `tree`              — path → rendered { content_bytes, mode } entries
+//   - `gitignore_lines`   — janus's `.gitignore` lines in source order (consumed by plan-builder for the gitignore_merge op)
+//   - `archetype_only`    — paths added or overwritten by the archetype walk (used by Plan 3 to split apply-shared-overlay
+//                           from apply-archetype-overlay steps). A path that exists in both shared and archetype walks is
+//                           considered archetype-owned semantically — it goes in this set.
+export type OverlayResult = {
+  tree: OverlayTree;
+  gitignore_lines: string[];
+  archetype_only: Set<string>;
 };
 ```
 
@@ -397,7 +413,7 @@ git commit -m "test(retrofit): add fixture-repo materializer + greenfield fixtur
 - Create: `tests/fixtures/repos/npm-with-jest/{package.json,package-lock.json,jest.config.js}`
 - Create: `tests/fixtures/repos/repo-without-package-json/README.md`
 
-These four are needed by the early analyzer tests (Tasks 4–7). Submodule/symlink/monorepo/already-janus/commonjs/user-modified-skill come later in Task 20.
+These four are needed by the early analyzer tests (Tasks 4–7). Submodule/symlink/monorepo/already-janus/commonjs/user-modified-skill come later in Task 21.
 
 - [ ] **Step 1: Create eslint-only fixture**
 
@@ -917,7 +933,7 @@ git commit -m "feat(retrofit): analyzer/package-manager.ts — pnpm/npm/yarn det
 - Create: `tests/fixtures/repos/commonjs-repo/package.json`
 - Create: `tests/fixtures/repos/repo-with-user-modified-skill/.claude/skills/foo.md`
 
-These three are needed by Tasks 8 (claude-kit) and 10 (analyzer index — has_janus_marker). The remaining fixtures (monorepo, submodule, symlink) land in Task 20.
+These three are needed by Tasks 8 (claude-kit) and 10 (analyzer index — has_janus_marker). The remaining fixtures (monorepo, submodule, symlink) land in Task 21.
 
 - [ ] **Step 1: Create already-janus fixture**
 
@@ -1569,7 +1585,9 @@ git commit -m "feat(retrofit): analyzer/plugin-evidence.ts — file-glob plugin 
 - Create: `src/retrofit/analyzer/index.ts`
 - Create: `src/retrofit/analyzer/index.test.ts`
 
-Composes the per-concern modules into a single `analyze()` function returning `Omit<RepoSnapshot, 'baseline_files'>`. Also: detects `.janus.json`, parses `prior_marker`, lists `ci_workflows`, and reads `unrecognized_tools` allowlist.
+Composes the per-concern modules into a single `analyze()` function returning `Omit<RepoSnapshot, 'baseline_files'>`. Also: detects `.janus.json`, parses `prior_marker`, lists `ci_workflows`, and surfaces `unrecognized_tools`.
+
+`analyze()` accepts an optional `unrecognizedToolsAllowlist`. When provided (Plan 5's CLI plumbs in the value loaded from `docs/conventions/dependencies.md` via the helper added in Task 11), it overrides the hardcoded starter list. When absent, the analyzer falls back to the hardcoded list defined in this task. This lets the same `analyze()` work standalone in tests and pick up the live docs allowlist in production.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -1633,7 +1651,7 @@ describe('analyze', () => {
     expect(qa.references_displaced_tool).toEqual(expect.arrayContaining(['eslint', 'npm']));
   });
 
-  it('detects unrecognized_tools by name from package.json devDependencies', () => {
+  it('detects unrecognized_tools using the hardcoded fallback when no allowlist opt is provided', () => {
     const fx = materializeFixture('greenfield');
     cleanups.push(fx.cleanup);
     writeFileSync(
@@ -1645,8 +1663,25 @@ describe('analyze', () => {
     );
     const snap = analyze(fx.dir);
     expect(snap.unrecognized_tools).toContain('lint-staged');
-    // Not in the allowlist:
+    // Not in the hardcoded fallback list:
     expect(snap.unrecognized_tools).not.toContain('biome-not-real-tool');
+  });
+
+  it('uses the unrecognizedToolsAllowlist opt when provided (overrides hardcoded fallback)', () => {
+    const fx = materializeFixture('greenfield');
+    cleanups.push(fx.cleanup);
+    writeFileSync(
+      join(fx.dir, 'package.json'),
+      JSON.stringify({
+        name: 'p',
+        devDependencies: { 'lint-staged': '^15.0.0', 'custom-tool': '^1' },
+      }),
+    );
+    // Allowlist is exactly { 'custom-tool' } — lint-staged is in the hardcoded list but
+    // NOT in this opt-provided list, so it must NOT surface.
+    const snap = analyze(fx.dir, { unrecognizedToolsAllowlist: ['custom-tool'] });
+    expect(snap.unrecognized_tools).toContain('custom-tool');
+    expect(snap.unrecognized_tools).not.toContain('lint-staged');
   });
 });
 ```
@@ -1671,10 +1706,13 @@ import { analyzeGitState } from './git-state.js';
 import { analyzePackageManager } from './package-manager.js';
 import { analyzePluginEvidence } from './plugin-evidence.js';
 
-// v0.1 unrecognized-tools allowlist. Per spec §5, this lives in
-// docs/conventions/dependencies.md under "## Unrecognized tools (retrofit warning allowlist)".
-// For now we hardcode a starter set; Plan 5 wires up the docs read.
-const UNRECOGNIZED_TOOLS_ALLOWLIST = new Set([
+// v0.1 unrecognized-tools allowlist FALLBACK. Per spec §5, the canonical source
+// lives in docs/conventions/dependencies.md under
+// "## Unrecognized tools (retrofit warning allowlist)". Plan 5's CLI loads that
+// file via `loadUnrecognizedToolsAllowlist` (Task 11) and passes the result to
+// `analyze` via opts.unrecognizedToolsAllowlist. When the opt is absent (e.g.
+// in unit tests that don't have a janusRoot), this hardcoded starter list is used.
+const HARDCODED_UNRECOGNIZED_TOOLS_FALLBACK = [
   'lint-staged',
   'rome',
   'dprint',
@@ -1688,11 +1726,23 @@ const UNRECOGNIZED_TOOLS_ALLOWLIST = new Set([
   'rollup',
   'esbuild',
   'tsup',
-]);
+];
 
 const DISPLACED_TOOL_NAMES = ['eslint', 'prettier', 'husky', 'jest', 'commitlint', 'npm', 'yarn'];
 
-export function analyze(repoRoot: string): Omit<RepoSnapshot, 'baseline_files'> {
+export type AnalyzeOpts = {
+  /**
+   * Allowlist of tool names to surface in `unrecognized_tools`. When provided
+   * (typically by Plan 5's CLI after calling `loadUnrecognizedToolsAllowlist`),
+   * this overrides the hardcoded fallback. Pass `[]` to disable detection entirely.
+   */
+  unrecognizedToolsAllowlist?: string[];
+};
+
+export function analyze(
+  repoRoot: string,
+  opts?: AnalyzeOpts,
+): Omit<RepoSnapshot, 'baseline_files'> {
   const pmResult = analyzePackageManager(repoRoot);
   const gitResult = analyzeGitState(repoRoot);
   const displaced_tools = analyzeDisplacedTools(repoRoot, pmResult.package_json);
@@ -1700,7 +1750,10 @@ export function analyze(repoRoot: string): Omit<RepoSnapshot, 'baseline_files'> 
   const plugin_evidence = analyzePluginEvidence(repoRoot, pmResult.package_json);
   const ci_workflows = listCiWorkflows(repoRoot);
   const { has_janus_marker, prior_marker } = readPriorMarker(repoRoot);
-  const unrecognized_tools = detectUnrecognizedTools(pmResult.package_json);
+  const allowlist = new Set(
+    opts?.unrecognizedToolsAllowlist ?? HARDCODED_UNRECOGNIZED_TOOLS_FALLBACK,
+  );
+  const unrecognized_tools = detectUnrecognizedTools(pmResult.package_json, allowlist);
 
   return {
     repo_root: repoRoot,
@@ -1755,13 +1808,16 @@ function listCiWorkflows(repoRoot: string): WorkflowFile[] {
   return out;
 }
 
-function detectUnrecognizedTools(pkg: ReturnType<typeof analyzePackageManager>['package_json']): string[] {
+function detectUnrecognizedTools(
+  pkg: ReturnType<typeof analyzePackageManager>['package_json'],
+  allowlist: Set<string>,
+): string[] {
   if (!pkg) return [];
   const found = new Set<string>();
   for (const deps of [pkg.devDependencies, pkg.dependencies]) {
     if (!deps) continue;
     for (const name of Object.keys(deps)) {
-      if (UNRECOGNIZED_TOOLS_ALLOWLIST.has(name)) found.add(name);
+      if (allowlist.has(name)) found.add(name);
     }
   }
   return [...found].sort();
@@ -1771,19 +1827,189 @@ function detectUnrecognizedTools(pkg: ReturnType<typeof analyzePackageManager>['
 - [ ] **Step 4: Run the test to verify it passes**
 
 Run: `pnpm test:unit -- "analyzer/index.test"`
-Expected: PASS — 4/4.
+Expected: PASS — 5/5.
 
 - [ ] **Step 5: Typecheck + commit**
 
 ```bash
 pnpm typecheck
 git add src/retrofit/analyzer/index.ts src/retrofit/analyzer/index.test.ts
-git commit -m "feat(retrofit): analyzer/index.ts — composed analyze() with .janus.json + workflow + unrecognized-tool detection"
+git commit -m "feat(retrofit): analyzer/index.ts — composed analyze() with .janus.json + workflow + unrecognized-tool detection (allowlist injectable)"
 ```
 
 ---
 
-## Task 11: resolvers/slot-validation.ts
+## Task 11: analyzer/unrecognized-tools-allowlist.ts (docs reader)
+
+**Files:**
+- Create: `src/retrofit/analyzer/unrecognized-tools-allowlist.ts`
+- Create: `src/retrofit/analyzer/unrecognized-tools-allowlist.test.ts`
+
+Reads `<janusRoot>/docs/conventions/dependencies.md`, locates the heading line `## Unrecognized tools (retrofit warning allowlist)` (case-sensitive, exact text), and extracts bullet lines (`- name` or `* name`) that follow until the next `## ` heading or EOF. Returns a list of trimmed tool names.
+
+Plan 5's CLI imports this helper and passes the result through to `analyze(repoRoot, { unrecognizedToolsAllowlist })`. When the docs file is absent or the heading is missing, the helper returns `[]` — Task 10's `analyze()` then falls back to its hardcoded starter list (because an empty allowlist would suppress detection entirely, the CLI is expected to skip plumbing through an empty value if the docs read returned nothing; alternatively the CLI may pass `undefined` to opt back into the fallback explicitly).
+
+- [ ] **Step 1: Write the failing test**
+
+`src/retrofit/analyzer/unrecognized-tools-allowlist.test.ts`:
+
+```ts
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, describe, expect, it } from 'vitest';
+import { loadUnrecognizedToolsAllowlist } from './unrecognized-tools-allowlist.js';
+
+describe('loadUnrecognizedToolsAllowlist', () => {
+  const cleanups: Array<() => void> = [];
+  afterEach(() => {
+    for (const c of cleanups) c();
+    cleanups.length = 0;
+  });
+
+  function makeJanusRoot(depsContent: string | null): string {
+    const root = mkdtempSync(join(tmpdir(), 'janus-allowlist-test-'));
+    cleanups.push(() => rmSync(root, { recursive: true, force: true }));
+    if (depsContent !== null) {
+      mkdirSync(join(root, 'docs/conventions'), { recursive: true });
+      writeFileSync(join(root, 'docs/conventions/dependencies.md'), depsContent);
+    }
+    return root;
+  }
+
+  it('returns names listed under the allowlist heading', async () => {
+    const root = makeJanusRoot(
+      [
+        '# Dependencies',
+        '',
+        '## Unrecognized tools (retrofit warning allowlist)',
+        '',
+        '- lint-staged',
+        '- rome',
+        '* dprint',
+        '',
+        '## Some other section',
+        '',
+        '- not-included',
+      ].join('\n'),
+    );
+    const list = await loadUnrecognizedToolsAllowlist(root);
+    expect(list).toEqual(['lint-staged', 'rome', 'dprint']);
+  });
+
+  it('returns [] when the heading is absent', async () => {
+    const root = makeJanusRoot(
+      ['# Dependencies', '', '## Other heading', '', '- foo'].join('\n'),
+    );
+    const list = await loadUnrecognizedToolsAllowlist(root);
+    expect(list).toEqual([]);
+  });
+
+  it('returns [] when the file is absent', async () => {
+    const root = makeJanusRoot(null);
+    const list = await loadUnrecognizedToolsAllowlist(root);
+    expect(list).toEqual([]);
+  });
+
+  it('only collects bullets between the heading and the next `## ` heading', async () => {
+    const root = makeJanusRoot(
+      [
+        '## Unrecognized tools (retrofit warning allowlist)',
+        '',
+        '- alpha',
+        '- beta',
+        '## Next section',
+        '- not-collected',
+        '## Yet another',
+        '- also-not-collected',
+      ].join('\n'),
+    );
+    const list = await loadUnrecognizedToolsAllowlist(root);
+    expect(list).toEqual(['alpha', 'beta']);
+  });
+
+  it('ignores blank lines and trims whitespace from bullet text', async () => {
+    const root = makeJanusRoot(
+      [
+        '## Unrecognized tools (retrofit warning allowlist)',
+        '',
+        '-   spaced-out   ',
+        '',
+        '*\ttabbed-bullet',
+        '',
+      ].join('\n'),
+    );
+    const list = await loadUnrecognizedToolsAllowlist(root);
+    expect(list).toEqual(['spaced-out', 'tabbed-bullet']);
+  });
+});
+```
+
+- [ ] **Step 2: Run the test to verify it fails**
+
+Run: `pnpm test:unit -- "unrecognized-tools-allowlist.test"`
+Expected: FAIL — module not found.
+
+- [ ] **Step 3: Implement the helper**
+
+`src/retrofit/analyzer/unrecognized-tools-allowlist.ts`:
+
+```ts
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
+const HEADING = '## Unrecognized tools (retrofit warning allowlist)';
+
+/**
+ * Read the canonical retrofit-allowlist of "unrecognized but acceptable" tool
+ * names from `<janusRoot>/docs/conventions/dependencies.md`. The list lives
+ * under the exact heading `## Unrecognized tools (retrofit warning allowlist)`
+ * and ends at the next `## ` heading or EOF.
+ *
+ * Returns `[]` when the file is absent or the heading is missing — callers
+ * (notably Plan 5's CLI) decide whether to fall back to the hardcoded
+ * analyzer default by NOT passing the result through.
+ */
+export async function loadUnrecognizedToolsAllowlist(janusRoot: string): Promise<string[]> {
+  const path = join(janusRoot, 'docs/conventions/dependencies.md');
+  if (!existsSync(path)) return [];
+  const content = readFileSync(path, 'utf8');
+
+  const lines = content.split('\n').map((l) => l.replace(/\r$/, ''));
+  const out: string[] = [];
+  let inSection = false;
+  for (const line of lines) {
+    if (line === HEADING) {
+      inSection = true;
+      continue;
+    }
+    if (!inSection) continue;
+    if (line.startsWith('## ')) break; // next heading — stop collecting
+    const m = line.match(/^\s*[-*]\s+(.+?)\s*$/);
+    if (m) {
+      out.push(m[1]!);
+    }
+  }
+  return out;
+}
+```
+
+- [ ] **Step 4: Run the test to verify it passes**
+
+Run: `pnpm test:unit -- "unrecognized-tools-allowlist.test"`
+Expected: PASS — 5/5.
+
+- [ ] **Step 5: Typecheck + commit**
+
+```bash
+pnpm typecheck
+git add src/retrofit/analyzer/unrecognized-tools-allowlist.ts src/retrofit/analyzer/unrecognized-tools-allowlist.test.ts
+git commit -m "feat(retrofit): analyzer/unrecognized-tools-allowlist.ts — read docs/conventions/dependencies.md heading"
+```
+
+---
+
+## Task 12: resolvers/slot-validation.ts
 
 **Files:**
 - Create: `src/retrofit/resolvers/slot-validation.ts`
@@ -1930,7 +2156,7 @@ git commit -m "feat(retrofit): resolvers/slot-validation.ts — regex table + no
 
 ---
 
-## Task 12: resolvers/slots.ts
+## Task 13: resolvers/slots.ts
 
 **Files:**
 - Create: `src/retrofit/resolvers/slots.ts`
@@ -2348,7 +2574,7 @@ git commit -m "feat(retrofit): resolvers/slots.ts — source-order slot resoluti
 
 ---
 
-## Task 13: resolvers/plugins.ts
+## Task 14: resolvers/plugins.ts
 
 **Files:**
 - Create: `src/retrofit/resolvers/plugins.ts`
@@ -2541,7 +2767,7 @@ git commit -m "feat(retrofit): resolvers/plugins.ts — auto-detect + --plugin/-
 
 ---
 
-## Task 14: plan-builder/overlay-tree.ts — walker + .exclude + mode
+## Task 15: plan-builder/overlay-tree.ts — walker + .exclude + mode
 
 **Files:**
 - Create: `src/retrofit/plan-builder/overlay-tree.ts`
@@ -2549,7 +2775,7 @@ git commit -m "feat(retrofit): resolvers/plugins.ts — auto-detect + --plugin/-
 - Create: `src/retrofit/plan-builder/exclude.ts`
 - Create: `src/retrofit/plan-builder/exclude.test.ts`
 
-This task lands the walker skeleton and the `is_excluded()` helper. It does NOT yet render `.tmpl` files (that's Task 15) and does NOT yet handle archetype overlay (Task 16). After this task, `buildOverlayTree` returns the verbatim subset of `_shared/` only, with correct `.exclude` filtering and modes.
+This task lands the walker skeleton and the `is_excluded()` helper. It does NOT yet render `.tmpl` files (that's Task 16) and does NOT yet handle archetype overlay (Task 17). After this task, `buildOverlayTree` returns the verbatim subset of `_shared/` only, with correct `.exclude` filtering and modes.
 
 - [ ] **Step 1: Write the failing exclude.ts test**
 
@@ -2688,7 +2914,7 @@ describe('buildOverlayTree (walker, .exclude, mode)', () => {
 });
 
 function stubSlots(): Record<string, string> {
-  // Used by Tasks 15+; for the walker-only test, slot rendering is skipped via skipTmpl.
+  // Used by Tasks 16+; for the walker-only test, slot rendering is skipped via skipTmpl.
   return {
     workload: 'foo',
     description: 'd',
@@ -2707,7 +2933,7 @@ function stubSlots(): Record<string, string> {
 }
 ```
 
-- [ ] **Step 5: Implement overlay-tree.ts (walker + mode + .exclude — Tasks 15/16/17/18 add layers)**
+- [ ] **Step 5: Implement overlay-tree.ts (walker + mode + .exclude — Tasks 16/17/18/19 add layers)**
 
 `src/retrofit/plan-builder/overlay-tree.ts`:
 
@@ -2718,7 +2944,7 @@ import type { OverlayTree } from '../types/index.js';
 import { buildIsExcluded, readExcludeFile } from './exclude.js';
 
 export type BuildOverlayOpts = {
-  /** Skip .tmpl rendering (used by walker-only tests). Tasks 15+ remove this from production paths. */
+  /** Skip .tmpl rendering (used by walker-only tests). Tasks 16+ remove this from production paths. */
   skipTmpl?: boolean;
 };
 
@@ -2739,9 +2965,9 @@ export function buildOverlayTree(
   // Pass 1: walk _shared/.
   walkSharedTree(sharedRoot, sharedRoot, isExcluded, tree, opts);
 
-  // Pass 2: walk archetype overlay (deferred to Task 16 — placeholder no-op for now).
-  // Pass 3: user-side package.json merge (deferred to Task 18).
-  // Pass 4: gitignore special-casing (deferred to Task 17).
+  // Pass 2: walk archetype overlay (deferred to Task 17 — placeholder no-op for now).
+  // Pass 3: user-side package.json merge (deferred to Task 19).
+  // Pass 4: gitignore special-casing (deferred to Task 18).
 
   return tree;
 }
@@ -2770,7 +2996,7 @@ function walkSharedTree(
 
     if (rel.endsWith('.tmpl')) {
       if (opts.skipTmpl) continue;
-      // Real .tmpl rendering lands in Task 15.
+      // Real .tmpl rendering lands in Task 16.
       continue;
     }
 
@@ -2806,7 +3032,7 @@ git commit -m "feat(retrofit): overlay-tree walker + .exclude semantics + mode p
 
 ---
 
-## Task 15: overlay-tree — Mustache rendering via vendored mo
+## Task 16: overlay-tree — Mustache rendering via vendored mo
 
 **Files:**
 - Create: `src/retrofit/plan-builder/render-mo.ts`
@@ -2939,7 +3165,7 @@ export function buildOverlayTree(
   const isExcluded = buildIsExcluded(readExcludeFile(join(archeRoot, '.exclude')));
 
   walkTree({ janusRoot, base: sharedRoot, current: sharedRoot, isExcluded, slots, tree, opts });
-  // Tasks 16/17/18 add archetype walk + gitignore special-case + user-pkg merge.
+  // Tasks 17/18/19 add archetype walk + gitignore special-case + user-pkg merge.
   return tree;
 }
 
@@ -3019,7 +3245,7 @@ git commit -m "feat(retrofit): overlay-tree — Mustache rendering via vendored 
 
 ---
 
-## Task 16: overlay-tree — archetype walk + jq deep-merge + .env.example append
+## Task 17: overlay-tree — archetype walk + jq deep-merge + .env.example append
 
 **Files:**
 - Modify: `src/retrofit/plan-builder/overlay-tree.ts`
@@ -3027,7 +3253,7 @@ git commit -m "feat(retrofit): overlay-tree — Mustache rendering via vendored 
 - Create: `src/retrofit/plan-builder/jq-merge.test.ts`
 - Modify: `src/retrofit/plan-builder/overlay-tree.test.ts`
 
-After this task, `buildOverlayTree` mirrors all of scaffold.sh's tree-construction passes 1, 2, 3 (excluding .gitignore special case = Task 17 and user-side pkg merge = Task 18).
+After this task, `buildOverlayTree` mirrors all of scaffold.sh's tree-construction passes 1, 2, 3 (excluding .gitignore special case = Task 18 and user-side pkg merge = Task 19).
 
 - [ ] **Step 1: Write the failing jq-merge test**
 
@@ -3092,18 +3318,23 @@ export function jqDeepMerge(left: unknown, right: unknown): unknown {
 Run: `pnpm test:unit -- "plan-builder/jq-merge"`
 Expected: PASS — 3/3.
 
-- [ ] **Step 4: Extend overlay-tree.ts with archetype walk**
+- [ ] **Step 4: Extend overlay-tree.ts with archetype walk + introduce `OverlayResult` return shape**
 
-Update `src/retrofit/plan-builder/overlay-tree.ts`. Replace `buildOverlayTree` and add `walkArchetypeTree`:
+This task lifts `buildOverlayTree`'s return type from a bare `OverlayTree` to the full `OverlayResult { tree, gitignore_lines, archetype_only }` defined in `types/index.ts` (Task 1). The archetype walk now records every added/overwritten path in `archetype_only`. `gitignore_lines` is initialized to `[]` here and gets populated by Task 18.
+
+Update `src/retrofit/plan-builder/overlay-tree.ts`. Replace `buildOverlayTree` and add `walkArchetype`:
 
 ```ts
+import type { OverlayResult, OverlayTree } from '../types/index.js';
+
 export function buildOverlayTree(
   janusRoot: string,
   archetype: string,
   slots: Record<string, string>,
   opts: BuildOverlayOpts = {},
-): OverlayTree {
+): OverlayResult {
   const tree: OverlayTree = new Map();
+  const archetype_only = new Set<string>();
   const sharedRoot = join(janusRoot, 'templates/_shared');
   const archeRoot = join(janusRoot, 'templates', archetype);
   const isExcluded = buildIsExcluded(readExcludeFile(join(archeRoot, '.exclude')));
@@ -3111,81 +3342,95 @@ export function buildOverlayTree(
   // Pass 1: shared walk.
   walkTree({ janusRoot, base: sharedRoot, current: sharedRoot, isExcluded, slots, tree, opts });
 
-  // Pass 2: archetype walk (overlay-with-replace).
+  // Pass 2: archetype walk (overlay-with-replace). Records every added/overwritten
+  // path in `archetype_only` so Plan 3 can emit a separate apply-archetype-overlay step.
   if (existsSync(archeRoot)) {
-    walkArchetype({ janusRoot, archeRoot, slots, tree, opts });
+    walkArchetype({ janusRoot, archeRoot, current: archeRoot, isExcluded, slots, tree, archetype_only, opts });
   }
 
   // Pass 3: if archetype excludes infra/, strip deploy:* scripts from package.json.
   if (excludesInfra(readExcludeFile(join(archeRoot, '.exclude')))) {
     pruneDeployScripts(tree);
+    // The archetype's `.exclude` is the cause of the package.json mutation here; keep
+    // package.json in archetype_only (it's archetype-driven semantically, even though
+    // the bytes were last written by walkArchetype's package.json.tmpl branch).
+    archetype_only.add('package.json');
   }
 
-  return tree;
+  // gitignore_lines starts empty; Task 18 populates it.
+  return { tree, gitignore_lines: [], archetype_only };
 }
 
-function walkArchetype(args: {
+type WalkArchetypeArgs = {
   janusRoot: string;
   archeRoot: string;
+  current: string;
+  isExcluded: (rel: string) => boolean;
   slots: Record<string, string>;
   tree: OverlayTree;
+  archetype_only: Set<string>;
   opts: BuildOverlayOpts;
-}): void {
-  const { janusRoot, archeRoot, slots, tree, opts } = args;
-  walkArcheRecursive(archeRoot, archeRoot);
+};
 
-  function walkArcheRecursive(base: string, current: string): void {
-    for (const entry of readdirSync(current)) {
-      const full = join(current, entry);
-      const stat = statSync(full);
-      const rel = toPosix(relative(base, full));
+function walkArchetype(args: WalkArchetypeArgs): void {
+  // `isExcluded` is threaded in for symmetry with walkTree and forward-compat with archetype-side
+  // .exclude semantics; scaffold.sh's archetype walk does not currently filter via .exclude (the
+  // .exclude file controls the SHARED walk only — see Task 15), so it's intentionally unused here.
+  const { janusRoot, archeRoot, current, slots, tree, archetype_only, opts } = args;
+  for (const entry of readdirSync(current)) {
+    const full = join(current, entry);
+    const stat = statSync(full);
+    const rel = toPosix(relative(archeRoot, full));
 
-      // Per-file skip rules (from scaffold.sh lines 326–330):
-      if (rel === '.exclude' || rel === 'README.md' || rel === 'slots.json') continue;
+    // Per-file skip rules (from scaffold.sh lines 326–330):
+    if (rel === '.exclude' || rel === 'README.md' || rel === 'slots.json') continue;
 
-      if (stat.isDirectory()) {
-        walkArcheRecursive(base, full);
-        continue;
-      }
-      if (!stat.isFile()) continue;
-
-      // .env.example: append to shared, don't replace.
-      if (rel === '.env.example') {
-        const archeContent = readFileSync(full);
-        const existing = tree.get('.env.example');
-        const merged = existing
-          ? Buffer.concat([existing.content, Buffer.from('\n'), archeContent])
-          : archeContent;
-        tree.set('.env.example', { content: merged, mode: 0o644 });
-        continue;
-      }
-
-      // package.json.tmpl: render then jq-deep-merge over the shared package.json in the tree.
-      if (rel === 'package.json.tmpl') {
-        if (opts.skipTmpl) continue;
-        const archeRendered = renderMo(janusRoot, full, slots);
-        const sharedPkgEntry = tree.get('package.json');
-        const sharedPkg = sharedPkgEntry ? JSON.parse(sharedPkgEntry.content.toString('utf8')) : {};
-        const archePkg = JSON.parse(archeRendered.toString('utf8'));
-        const merged = jqDeepMerge(sharedPkg, archePkg);
-        tree.set('package.json', {
-          content: Buffer.from(`${JSON.stringify(merged, null, 2)}\n`, 'utf8'),
-          mode: 0o644,
-        });
-        continue;
-      }
-
-      // Render-or-copy with overlay-replace.
-      if (rel.endsWith('.tmpl')) {
-        if (opts.skipTmpl) continue;
-        const rendered = renderMo(janusRoot, full, slots);
-        const outRel = rel.slice(0, -'.tmpl'.length);
-        tree.set(outRel, { content: rendered, mode: computeMode(outRel) });
-        continue;
-      }
-
-      tree.set(rel, { content: readFileSync(full), mode: computeMode(rel) });
+    if (stat.isDirectory()) {
+      walkArchetype({ ...args, current: full });
+      continue;
     }
+    if (!stat.isFile()) continue;
+
+    // .env.example: append to shared, don't replace.
+    if (rel === '.env.example') {
+      const archeContent = readFileSync(full);
+      const existing = tree.get('.env.example');
+      const merged = existing
+        ? Buffer.concat([existing.content, Buffer.from('\n'), archeContent])
+        : archeContent;
+      tree.set('.env.example', { content: merged, mode: 0o644 });
+      archetype_only.add('.env.example');
+      continue;
+    }
+
+    // package.json.tmpl: render then jq-deep-merge over the shared package.json in the tree.
+    if (rel === 'package.json.tmpl') {
+      if (opts.skipTmpl) continue;
+      const archeRendered = renderMo(janusRoot, full, slots);
+      const sharedPkgEntry = tree.get('package.json');
+      const sharedPkg = sharedPkgEntry ? JSON.parse(sharedPkgEntry.content.toString('utf8')) : {};
+      const archePkg = JSON.parse(archeRendered.toString('utf8'));
+      const merged = jqDeepMerge(sharedPkg, archePkg);
+      tree.set('package.json', {
+        content: Buffer.from(`${JSON.stringify(merged, null, 2)}\n`, 'utf8'),
+        mode: 0o644,
+      });
+      archetype_only.add('package.json');
+      continue;
+    }
+
+    // Render-or-copy with overlay-replace.
+    if (rel.endsWith('.tmpl')) {
+      if (opts.skipTmpl) continue;
+      const rendered = renderMo(janusRoot, full, slots);
+      const outRel = rel.slice(0, -'.tmpl'.length);
+      tree.set(outRel, { content: rendered, mode: computeMode(outRel) });
+      archetype_only.add(outRel);
+      continue;
+    }
+
+    tree.set(rel, { content: readFileSync(full), mode: computeMode(rel) });
+    archetype_only.add(rel);
   }
 }
 
@@ -3215,13 +3460,35 @@ import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { jqDeepMerge } from './jq-merge.js';
 ```
 
-- [ ] **Step 5: Add archetype-overlay assertions to overlay-tree.test.ts**
+**Note on the return shape:** This task changes `buildOverlayTree`'s return type from `OverlayTree` to `OverlayResult`. Earlier tasks' tests that called `buildOverlayTree(...).has(...)` directly must be updated to use `buildOverlayTree(...).tree.has(...)`. Use `replace_all` in `overlay-tree.test.ts` to convert all such call sites in one pass:
 
-Append to the existing describe block:
+```bash
+# Pseudocode — actual edits use the Edit tool with replace_all:
+# Replace `buildOverlayTree(JANUS_ROOT, ...);` with `buildOverlayTree(JANUS_ROOT, ...).tree;`
+# Replace `tree.has(` left-overs in tests as needed (most existing tests already destructure the return).
+```
+
+The earliest tests in Task 15 (`tree.has('biome.jsonc')`, `tree.keys()`, etc.) treated the return as `OverlayTree`. Convert them to access `.tree` on the result. Task 18's gitignore work later assumes this lift is already in place.
+
+- [ ] **Step 5: Update earlier overlay-tree tests to use the new `.tree` access, and add archetype-overlay + archetype_only assertions**
+
+First, retrofit existing tests in `overlay-tree.test.ts` to use the new return shape. Tests written in Tasks 15–16 called `buildOverlayTree(...)` and treated the result as a `Map`. Update each call to destructure the new `OverlayResult`:
+
+```ts
+// Before:
+const tree = buildOverlayTree(JANUS_ROOT, 'generic-ts', stubSlots(), { skipTmpl: true });
+
+// After:
+const { tree } = buildOverlayTree(JANUS_ROOT, 'generic-ts', stubSlots(), { skipTmpl: true });
+```
+
+Apply this transformation to every existing test in the file (Task 15 added 4 walker tests; Task 16 added 1 .tmpl test).
+
+Then append the archetype-overlay assertions:
 
 ```ts
 it('archetype overlay replaces shared file (backend-functions has its own AGENTS.md.tmpl)', () => {
-  const tree = buildOverlayTree(JANUS_ROOT, 'backend-functions', stubSlots());
+  const { tree } = buildOverlayTree(JANUS_ROOT, 'backend-functions', stubSlots());
   const agents = tree.get('AGENTS.md');
   expect(agents).toBeDefined();
   // Archetype version is what survives; verify it does NOT contain the generic _shared marker.
@@ -3230,7 +3497,7 @@ it('archetype overlay replaces shared file (backend-functions has its own AGENTS
 });
 
 it('jq-merges archetype package.json over shared package.json', () => {
-  const tree = buildOverlayTree(JANUS_ROOT, 'backend-functions', stubSlots());
+  const { tree } = buildOverlayTree(JANUS_ROOT, 'backend-functions', stubSlots());
   const pkgEntry = tree.get('package.json');
   expect(pkgEntry).toBeDefined();
   const pkg = JSON.parse(pkgEntry!.content.toString('utf8'));
@@ -3239,30 +3506,56 @@ it('jq-merges archetype package.json over shared package.json', () => {
 });
 
 it('skips archetype README.md (meta documentation, never shipped)', () => {
-  const tree = buildOverlayTree(JANUS_ROOT, 'generic-ts', stubSlots());
+  const { tree } = buildOverlayTree(JANUS_ROOT, 'generic-ts', stubSlots());
   // README.md from _shared/ should still be present; what matters is we didn't blow it away with the
   // archetype's META README. (The archetype's README.md is documentation about the archetype itself.)
   const readme = tree.get('README.md');
   expect(readme).toBeDefined();
+});
+
+it('records every archetype-walked path in archetype_only', () => {
+  // backend-functions ships archetype-specific files (e.g. host.json) that don't exist in _shared/.
+  // The archetype walk must record them in archetype_only so Plan 3 can emit a dedicated
+  // apply-archetype-overlay step.
+  const { tree, archetype_only } = buildOverlayTree(JANUS_ROOT, 'backend-functions', stubSlots());
+  expect(archetype_only.size).toBeGreaterThan(0);
+  // package.json is mutated by the archetype walk (jq-merge of package.json.tmpl) — it MUST be
+  // recorded as archetype-owned even though _shared/ also writes a package.json.
+  expect(tree.has('package.json')).toBe(true);
+  expect(archetype_only.has('package.json')).toBe(true);
+  // Every path in archetype_only must also be present in the tree.
+  for (const path of archetype_only) {
+    expect(tree.has(path)).toBe(true);
+  }
+});
+
+it('keeps archetype_only empty for an archetype that ships nothing of its own (sanity)', () => {
+  // generic-ts is the closest-to-empty archetype; it still has files like .exclude that the
+  // walker skips, but tests should not assume zero archetype_only here. Instead, assert that
+  // any archetype_only path corresponds to a file that exists under templates/generic-ts/
+  // (i.e., archetype_only never contains shared-only paths).
+  const { archetype_only } = buildOverlayTree(JANUS_ROOT, 'generic-ts', stubSlots());
+  // Spot-check: a path that lives only in _shared/ must NOT be in archetype_only.
+  expect(archetype_only.has('biome.jsonc')).toBe(false);
 });
 ```
 
 - [ ] **Step 6: Run overlay-tree tests, verify pass**
 
 Run: `pnpm test:unit -- "plan-builder/overlay-tree"`
-Expected: PASS — 8/8.
+Expected: PASS — 10/10.
 
 - [ ] **Step 7: Typecheck + commit**
 
 ```bash
 pnpm typecheck
 git add src/retrofit/plan-builder/jq-merge.ts src/retrofit/plan-builder/jq-merge.test.ts src/retrofit/plan-builder/overlay-tree.ts src/retrofit/plan-builder/overlay-tree.test.ts
-git commit -m "feat(retrofit): overlay-tree — archetype walk + jq deep-merge + .env.example append"
+git commit -m "feat(retrofit): overlay-tree — archetype walk + jq deep-merge + .env.example append + OverlayResult.archetype_only"
 ```
 
 ---
 
-## Task 17: overlay-tree — `.gitignore` special case
+## Task 18: overlay-tree — `.gitignore` special case
 
 **Files:**
 - Modify: `src/retrofit/plan-builder/overlay-tree.ts`
@@ -3272,31 +3565,11 @@ Per spec §6 step 1: `.gitignore` is the only file in the overlay tree that may 
 
 Plan 2 implements only the overlay-tree side: the marker payload (the list of janus lines, in source order). The "fall back to write_file if user has none" decision is plan-builder's responsibility (Plan 3) since it requires reading the user's repo state.
 
-- [ ] **Step 1: Add a third map alongside OverlayTree**
+`OverlayResult` already exists from Task 17 with `gitignore_lines: []`; this task fills the field by special-casing `.gitignore` inside the shared-walk `walkTree`. (The archetype walk does NOT touch `.gitignore` — janus only ships a `_shared/.gitignore`.)
 
-Update the return type of `buildOverlayTree` to also surface gitignore lines. We do this by extending the function's return shape (not the `OverlayTree` map itself, which is `path → OverlayEntry`).
+- [ ] **Step 1: Special-case `.gitignore` inside `walkTree`**
 
-In `src/retrofit/plan-builder/overlay-tree.ts`:
-
-```ts
-export type OverlayResult = {
-  tree: OverlayTree;
-  gitignore_lines: string[]; // janus's lines in source order; consumed by plan-builder for gitignore_merge op
-};
-
-export function buildOverlayTree(
-  janusRoot: string,
-  archetype: string,
-  slots: Record<string, string>,
-  opts: BuildOverlayOpts = {},
-): OverlayResult {
-  // ... existing logic ...
-  // In walkTree, when `rel === '.gitignore'`, capture the lines instead of adding to tree:
-  // Then return { tree, gitignore_lines }.
-}
-```
-
-Modify `walkTree` to special-case `.gitignore`:
+Modify `walkTree` to take a `gitignoreLines` accumulator and skip writing `.gitignore` to the tree:
 
 ```ts
 function walkTree(args: {
@@ -3309,20 +3582,44 @@ function walkTree(args: {
   gitignoreLines: { lines: string[] };
   opts: BuildOverlayOpts;
 }): void {
-  // ... iteration ...
-  if (rel === '.gitignore') {
-    const content = readFileSync(full, 'utf8');
-    args.gitignoreLines.lines = content
-      .split('\n')
-      .map((l) => l.replace(/\r$/, ''))
-      .filter((l, i, arr) => !(i === arr.length - 1 && l === '')); // drop trailing newline
-    continue; // do NOT add to tree
+  const { janusRoot, base, current, isExcluded, slots, tree, gitignoreLines, opts } = args;
+  for (const entry of readdirSync(current)) {
+    const full = join(current, entry);
+    const stat = statSync(full);
+    const rel = toPosix(relative(base, full));
+
+    if (stat.isDirectory()) {
+      walkTree({ ...args, current: full });
+      continue;
+    }
+    if (!stat.isFile()) continue;
+    if (isExcluded(rel)) continue;
+
+    if (rel === '.gitignore') {
+      const content = readFileSync(full, 'utf8');
+      gitignoreLines.lines = content
+        .split('\n')
+        .map((l) => l.replace(/\r$/, ''))
+        .filter((l, i, arr) => !(i === arr.length - 1 && l === '')); // drop trailing newline
+      continue; // do NOT add to tree
+    }
+
+    if (rel.endsWith('.tmpl')) {
+      if (opts.skipTmpl) continue;
+      const rendered = renderMo(janusRoot, full, slots);
+      const outRel = rel.slice(0, -'.tmpl'.length);
+      tree.set(outRel, { content: rendered, mode: computeMode(outRel) });
+      continue;
+    }
+
+    tree.set(rel, { content: readFileSync(full), mode: computeMode(rel) });
   }
-  // ... rest ...
 }
 ```
 
-Final `buildOverlayTree`:
+- [ ] **Step 2: Update `buildOverlayTree` to thread `gitignoreLines` and return it**
+
+Replace the final `buildOverlayTree` body so it constructs `gitignoreLines`, threads it into `walkTree`, and returns it via the `OverlayResult` envelope alongside the already-implemented `archetype_only`:
 
 ```ts
 export function buildOverlayTree(
@@ -3332,11 +3629,13 @@ export function buildOverlayTree(
   opts: BuildOverlayOpts = {},
 ): OverlayResult {
   const tree: OverlayTree = new Map();
+  const archetype_only = new Set<string>();
   const gitignoreLines = { lines: [] as string[] };
   const sharedRoot = join(janusRoot, 'templates/_shared');
   const archeRoot = join(janusRoot, 'templates', archetype);
   const isExcluded = buildIsExcluded(readExcludeFile(join(archeRoot, '.exclude')));
 
+  // Pass 1: shared walk (also captures gitignore lines).
   walkTree({
     janusRoot,
     base: sharedRoot,
@@ -3348,22 +3647,33 @@ export function buildOverlayTree(
     opts,
   });
 
+  // Pass 2: archetype walk (records archetype_only).
   if (existsSync(archeRoot)) {
-    walkArchetype({ janusRoot, archeRoot, slots, tree, opts });
-  }
-  if (excludesInfra(readExcludeFile(join(archeRoot, '.exclude')))) {
-    pruneDeployScripts(tree);
+    walkArchetype({
+      janusRoot,
+      archeRoot,
+      current: archeRoot,
+      isExcluded,
+      slots,
+      tree,
+      archetype_only,
+      opts,
+    });
   }
 
-  return { tree, gitignore_lines: gitignoreLines.lines };
+  // Pass 3: archetype-driven package.json prune (still archetype-owned).
+  if (excludesInfra(readExcludeFile(join(archeRoot, '.exclude')))) {
+    pruneDeployScripts(tree);
+    archetype_only.add('package.json');
+  }
+
+  return { tree, gitignore_lines: gitignoreLines.lines, archetype_only };
 }
 ```
 
-- [ ] **Step 2: Update overlay-tree.test.ts to reflect the new return shape**
+- [ ] **Step 3: Add gitignore assertions to `overlay-tree.test.ts`**
 
-Existing tests use `tree.get(...)`. Replace `buildOverlayTree(...)` calls with `buildOverlayTree(...).tree` everywhere in the test file (use `replace_all` if the test file has many occurrences).
-
-Also add:
+Append:
 
 ```ts
 it('does NOT add .gitignore to the tree (special-cased for gitignore_merge)', () => {
@@ -3379,12 +3689,12 @@ it('captures janus .gitignore lines in source order', () => {
 });
 ```
 
-- [ ] **Step 3: Run overlay-tree tests, verify pass**
+- [ ] **Step 4: Run overlay-tree tests, verify pass**
 
 Run: `pnpm test:unit -- "plan-builder/overlay-tree"`
-Expected: PASS — 10/10.
+Expected: PASS — 12/12.
 
-- [ ] **Step 4: Typecheck + commit**
+- [ ] **Step 5: Typecheck + commit**
 
 ```bash
 pnpm typecheck
@@ -3394,7 +3704,7 @@ git commit -m "feat(retrofit): overlay-tree — capture .gitignore lines for git
 
 ---
 
-## Task 18: overlay-tree — user-side package.json merge
+## Task 19: overlay-tree — user-side package.json merge
 
 **Files:**
 - Modify: `src/retrofit/plan-builder/overlay-tree.ts`
@@ -3471,7 +3781,7 @@ it('mergeUserPackageJson preserves user-only scripts and lets janus win on colli
 - [ ] **Step 3: Run overlay-tree tests, verify pass**
 
 Run: `pnpm test:unit -- "plan-builder/overlay-tree"`
-Expected: PASS — 11/11.
+Expected: PASS — 13/13.
 
 - [ ] **Step 4: Typecheck + commit**
 
@@ -3483,7 +3793,7 @@ git commit -m "feat(retrofit): overlay-tree — mergeUserPackageJson helper for 
 
 ---
 
-## Task 19: analyzer/baseline-diff.ts
+## Task 20: analyzer/baseline-diff.ts
 
 **Files:**
 - Create: `src/retrofit/analyzer/baseline-diff.ts`
@@ -3635,7 +3945,7 @@ git commit -m "feat(retrofit): analyzer/baseline-diff.ts — overlay-vs-disk com
 
 ---
 
-## Task 20: Add the remaining cross-cutting fixtures
+## Task 21: Add the remaining cross-cutting fixtures
 
 **Files:**
 - Create: `tests/fixtures/repos/monorepo/{package.json,pnpm-workspace.yaml,packages/api/package.json}`
@@ -3643,7 +3953,7 @@ git commit -m "feat(retrofit): analyzer/baseline-diff.ts — overlay-vs-disk com
 - Create: `tests/fixtures/repos/repo-with-symlink/{setup.sh,real.txt}`
 - Create: `tests/fixtures/repos/pnpm-workspace/{package.json,pnpm-workspace.yaml,pnpm-lock.yaml}`
 
-Used by Task 21 integration tests and any future analyzer/baseline-diff edge-case tests.
+Used by Task 22 integration tests and any future analyzer/baseline-diff edge-case tests.
 
 - [ ] **Step 1: Monorepo fixture**
 
@@ -3784,7 +4094,7 @@ git commit -m "test(retrofit): add monorepo, pnpm-workspace, submodule, symlink 
 
 ---
 
-## Task 21: Cross-cutting integration test (analyze + resolvers + overlay + baseline-diff)
+## Task 22: Cross-cutting integration test (analyze + resolvers + overlay + baseline-diff)
 
 **Files:**
 - Create: `tests/integration/plan2-end-to-end.test.ts`
@@ -3871,6 +4181,10 @@ expect(plugins).toEqual([]);
 const overlay = buildOverlayTree(JANUS_ROOT, 'generic-ts', slots);
 expect(overlay.tree.size).toBeGreaterThan(0);
 expect(overlay.gitignore_lines.length).toBeGreaterThan(0);
+// archetype_only is populated for archetypes that ship archetype-specific files; for
+// generic-ts (which is mostly _shared/), it can be small but the SET MUST EXIST and
+// be a Set — verify the contract shape.
+expect(overlay.archetype_only).toBeInstanceOf(Set);
 
 // 5. Baseline diff.
 const diff = baselineDiff(fx.dir, overlay.tree);
@@ -3880,6 +4194,18 @@ const pkg = diff.find((d) => d.path === 'package.json');
 expect(pkg?.status).toBe('present_differs'); // user's eslint-flavored pkg differs from janus's
 const biome = diff.find((d) => d.path === 'biome.jsonc');
 expect(biome?.status).toBe('missing');
+
+// 6. archetype_only contract check using a real archetype (backend-functions).
+// This is part of the same end-to-end test because it exercises the same buildOverlayTree
+// that downstream Plan 3 will consume — the assertion that archetype_only is non-empty for
+// an archetype that ships its own files prevents a regression where the archetype walk fails
+// to populate the set.
+const beOverlay = buildOverlayTree(JANUS_ROOT, 'backend-functions', slots);
+expect(beOverlay.archetype_only.size).toBeGreaterThan(0);
+// Every archetype_only path must also exist in the tree.
+for (const path of beOverlay.archetype_only) {
+  expect(beOverlay.tree.has(path)).toBe(true);
+}
 ```
 
 (The implementer should consolidate the test into one self-contained `it` block matching the second/corrected version above.)
@@ -3899,7 +4225,7 @@ git commit -m "test(retrofit): cross-cutting integration test for analyze→reso
 
 ---
 
-## Task 22: Final sanity — all tests, build, biome fixups, close out Plan 2
+## Task 23: Final sanity — all tests, build, biome fixups, close out Plan 2
 
 **Files:**
 - Modify: any files biome reformats during `pnpm check`.
@@ -3947,7 +4273,7 @@ git add -A && git commit -m "chore(retrofit): biome formatting fixups for Plan 2
 - [ ] **Step 6: Final state check**
 
 Run: `git status` — must be clean.
-Run: `git log --oneline | head -25` — should show ~22 commits added during Plan 2 plus the Plan 1 series.
+Run: `git log --oneline | head -25` — should show ~23 commits added during Plan 2 plus the Plan 1 series.
 
 Plan 2 is complete. End state:
 - `analyze()` produces an `Omit<RepoSnapshot, 'baseline_files'>` with all top-level fields populated.
@@ -3965,28 +4291,32 @@ Plan 2 is complete. End state:
 After completing all tasks above, verify:
 
 1. **Spec coverage:**
-   - §5 RepoSnapshot fields → all populated in `analyze()` (Task 10) + `baselineDiff()` (Task 19)
+   - §5 RepoSnapshot fields → all populated in `analyze()` (Task 10) + `baselineDiff()` (Task 20)
    - §5 detection rules (pnpm/npm/yarn, eslint/prettier/husky/jest, dep-version conflicts) → covered by Tasks 5/7. **Note:** dep-version conflicts are *recorded* by Plan 3 plan-builder (it knows what janus pins); Plan 2's analyzer surfaces the user's pinned versions in `package_json.devDependencies` for plan-builder to compare. Document this hand-off in the relevant module comments.
-   - §5 unrecognized_tools allowlist → starter list in Task 10. Plan 5 wires up the docs/conventions/dependencies.md reader; note this in §5 cross-reference.
-   - §5a slot resolution source order, validation table, --non-interactive errors → Tasks 11/12
-   - §5b plugin resolution including banana-claude opt-in via --plugin → Task 13
-   - §6 step 1 walker, .exclude semantics, mode preservation, .gitignore special case → Tasks 14/15/17
-   - §6 step 2 archetype walk, .env.example append, package.json jq merge → Task 16
-   - §6 step 3 deploy:* prune when infra/ excluded → Task 16
-   - §6 step 4 user-side package.json merge → Task 18
-   - §12 ~12 fixture repos → Tasks 3/6/20 (greenfield, eslint-only, prettier-husky, npm-with-jest, no-package-json, already-janus, commonjs, user-modified-skill, monorepo, pnpm-workspace, submodule, symlink — that's 12)
+   - §5 unrecognized_tools allowlist → `analyze()` (Task 10) accepts an injectable `unrecognizedToolsAllowlist` opt; the helper that reads `docs/conventions/dependencies.md` lives in `analyzer/unrecognized-tools-allowlist.ts` (Task 11) and is exported for Plan 5's CLI to consume. Plan 2 owns both the API and the helper — Plan 5 simply imports them.
+   - §5a slot resolution source order, validation table, --non-interactive errors → Tasks 12/13
+   - §5b plugin resolution including banana-claude opt-in via --plugin → Task 14
+   - §6 step 1 walker, .exclude semantics, mode preservation, .gitignore special case → Tasks 15/16/18
+   - §6 step 2 archetype walk, .env.example append, package.json jq merge → Task 17
+   - §6 step 3 deploy:* prune when infra/ excluded → Task 17
+   - §6 step 4 user-side package.json merge → Task 19
+   - §12 ~12 fixture repos → Tasks 3/6/21 (greenfield, eslint-only, prettier-husky, npm-with-jest, no-package-json, already-janus, commonjs, user-modified-skill, monorepo, pnpm-workspace, submodule, symlink — that's 12)
 
-2. **Placeholder scan:** No "TBD", "TODO", "implement later", "fill in details", "appropriate error handling" — every step contains complete code or runnable commands. (Acknowledged exception: Task 21's first draft is shown then corrected with explicit instructions to consolidate into the corrected form. The implementer must produce the corrected form.)
+2. **Placeholder scan:** No "TBD", "TODO", "implement later", "fill in details", "appropriate error handling" — every step contains complete code or runnable commands. (Acknowledged exception: Task 22's first draft is shown then corrected with explicit instructions to consolidate into the corrected form. The implementer must produce the corrected form.)
 
 3. **Type consistency:**
-   - `SlotMap`, `SlotKey` defined in `resolvers/slots.ts` (Task 12); same names used in `resolvePlugins`-related types (Task 13). No drift between `resolveSlots` return type and the plan JSON's `payload.slots` shape (matches §5a normative slot vocabulary).
-   - `OverlayTree` / `OverlayEntry` consistently used between `overlay-tree.ts` (Tasks 14–18) and `baseline-diff.ts` (Task 19).
-   - `BaselineFileStatus` / `Sha256` from Plan 1 types are reused in Task 19's `baselineDiff` return shape.
-   - `analyze()` returns `Omit<RepoSnapshot, 'baseline_files'>` everywhere it's referenced; Plan 3 will compose `analyze()` + `baselineDiff()` into the full `RepoSnapshot`.
+   - `SlotMap`, `SlotKey` defined in `resolvers/slots.ts` (Task 13); same names used in `resolvePlugins`-related types (Task 14). No drift between `resolveSlots` return type and the plan JSON's `payload.slots` shape (matches §5a normative slot vocabulary).
+   - `OverlayTree` / `OverlayEntry` / `OverlayResult` consistently used between `overlay-tree.ts` (Tasks 15–19) and `baseline-diff.ts` (Task 20). `OverlayResult.archetype_only` is populated by Task 17's archetype walk and surfaced via the Task 18 builder return shape.
+   - `BaselineFileStatus` / `Sha256` from Plan 1 types are reused in Task 20's `baselineDiff` return shape.
+   - `analyze()` returns `Omit<RepoSnapshot, 'baseline_files'>` everywhere it's referenced; Plan 3 will compose `analyze()` + `baselineDiff()` into the full `RepoSnapshot`. Plan 3 will consume `OverlayResult.archetype_only` directly from the builder — no reach-back into Plan 2 internals.
 
-4. **Bite-sized tasks:** longest single step is Task 14 step 5 (overlay-tree walker implementation) and Task 16 step 4 (archetype walk with multiple inline branches). Both <100 lines of code each — within the bite-sized envelope.
+4. **Bite-sized tasks:** longest single step is Task 15 step 5 (overlay-tree walker implementation) and Task 17 step 4 (archetype walk with multiple inline branches). Both <100 lines of code each — within the bite-sized envelope.
 
 5. **Out-of-scope discipline:** No step generators, no plan-builder main, no executor, no CLI subcommands. `bin/janus.js` is untouched. The prompt UI is gated by an injected callback — no `inquirer`/`prompts` dependency added.
+
+6. **Cross-plan contracts honored:**
+   - `OverlayResult` shape (`tree`, `gitignore_lines`, `archetype_only`) — owned by Plan 2; consumed by Plan 3 step generators (which split apply-shared-overlay from apply-archetype-overlay using `archetype_only`). Plan 3 will NOT reach back into Plan 2 internals; it consumes the set off the builder return value.
+   - `analyze(repoRoot, opts?: { unrecognizedToolsAllowlist? })` signature — owned by Plan 2; consumed by Plan 5's CLI which calls `loadUnrecognizedToolsAllowlist(janusRoot)` (Task 11) first and threads the resulting list through to `analyze`. Plan 5 does NOT redefine the analyzer signature — that change is owned here.
 
 ---
 

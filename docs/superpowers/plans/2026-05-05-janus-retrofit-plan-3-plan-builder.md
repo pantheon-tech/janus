@@ -12,12 +12,26 @@
 
 ---
 
+## Consumed types preview (from Plan 1 + Plan 2)
+
+Plan 3 imports the following from `'../types/index.js'` (Plan 1 owns the surface):
+
+- `Plan`, `Operation`, `Warning`, `Sha256` — schema-mirrored shapes used by step generators and `buildPlan`'s return value.
+- `RepoSnapshot`, `BaselineFileStatus`, `PackageJsonSnapshot`, `ClaudeKitSnapshot`, `WorkflowFile`, `DisplacedTool` — analyzer outputs consumed in step generators and warnings.
+- `SHELL_WHITELIST`, `ShellCommand` — the runtime const + derived literal-union of vetted shell command strings. Plan 3 references `SHELL_WHITELIST[i]` at every `op: 'shell'` emit site so the whitelist is the single source of truth (Tasks 4, 9).
+
+From Plan 2's `'./overlay-tree.js'`:
+
+- `OverlayResult` — `{ tree: OverlayTree; gitignore_lines: string[]; archetype_only: Set<string> }`. Plan 3 destructures all three fields; the `archetype_only` set is consumed directly by Task 12 (no recompute, no helper).
+
+---
+
 ## Spec coverage map
 
 | Spec § | Plan 3 deliverable |
 |---|---|
 | §6 plan-builder pure function signature | `plan-builder/index.ts` (Task 12) |
-| §6.5 jq-merge clobber catalog (warnings) | `plan-builder/warnings.ts` (Task 11) |
+| §6.5 jq-merge clobber catalog (DEP_VERSION_CONFLICT + general overwrites) | `plan-builder/warnings.ts` (Task 11) |
 | §6.6 step categories 1–7 | one task per category (Tasks 3–10) |
 | §6.6 cross-category numeric ordering | `determinism.ts` (Task 2) |
 | §6.6 warnings sort by `(code, evidence[0], message)` | `determinism.ts` (Task 2) |
@@ -25,12 +39,15 @@
 | §6.6 root-group split (root-dotfiles/configs/docs) | `apply-shared-overlay.ts` (Task 5) |
 | §6.6 step id form (root-* bare; non-root prefixed) | `apply-shared-overlay.ts` (Task 5) |
 | §6.6.5 archetype-overlay-vs-displaced-tools constraint check | assertion in `apply-archetype-overlay.ts` (Task 6) |
+| §6.6 WARN_OVERWRITE_USER_KIT (`.claude/*` overwrites) | `warnings.ts` (Task 11) |
 | §6.7 WORKFLOW_REFERENCES_DISPLACED_TOOL warning emission | `warnings.ts` (Task 11) |
 | §6.8 per-op omission rule | `idempotency.ts` (Task 1) |
 | §6.8 step-level drop on empty op list | `index.ts` (Task 12) |
 | §7 Plan output validates against `plan.schema.json` | end-to-end test (Task 13) |
 | §7 determinism contract | `determinism.ts` (Task 2) + per-archetype test (Task 13) |
 | §8 SETTINGS_BASE construction (additions payload) | `merge-claude-kit.ts` (Task 7) |
+| §8 SETTINGS_PERMISSION_REDUNDANT / SETTINGS_HOOK_CONFLICT / SETTINGS_SCALAR_CONFLICT | `warnings.ts` (Task 11) |
+| §9 INSTALL_DEPS_MAY_FAIL (post-install dirty-state caveat) | `warnings.ts` (Task 11) |
 
 ---
 
@@ -549,6 +566,13 @@ it('emits displace-husky with the §6.6.1 op sequence', () => {
 
 - [ ] **Step 2: Extend displace-tools.ts**
 
+At the top of `displace-tools.ts`, extend the import to pull `SHELL_WHITELIST` from Plan 1's types barrel:
+
+```ts
+import type { DisplacedTool, Plan } from '../../types/index.js';
+import { SHELL_WHITELIST } from '../../types/index.js';
+```
+
 In `generateDisplaceToolsSteps`, replace the husky-skip branch:
 
 ```ts
@@ -574,10 +598,12 @@ function generateHusky(): Step {
         pointer: '/scripts',
         key_regex: '^(prepare|postinstall)$',
       },
-      { op: 'shell', command: 'git config --unset core.hooksPath', commit_paths: [] },
+      // 'git config --unset core.hooksPath'
+      { op: 'shell', command: SHELL_WHITELIST[2], commit_paths: [] },
+      // 'find .git/hooks -type f -not -name "*.sample" -delete'
       {
         op: 'shell',
-        command: 'find .git/hooks -type f -not -name "*.sample" -delete',
+        command: SHELL_WHITELIST[3],
         commit_paths: [],
       },
     ],
@@ -585,6 +611,8 @@ function generateHusky(): Step {
   };
 }
 ```
+
+Note: `SHELL_WHITELIST` is the runtime const exported by Plan 1 from `src/retrofit/types/index.ts`. Index `[2]` is `'git config --unset core.hooksPath'`; index `[3]` is `'find .git/hooks -type f -not -name "*.sample" -delete'`. The test asserting the literal string values still passes because TypeScript narrows `SHELL_WHITELIST[2]` / `[3]` to the exact string literals.
 
 - [ ] **Step 3: Run, verify pass, commit**
 
@@ -1477,6 +1505,7 @@ describe('generateInstallDepsStep', () => {
 
 ```ts
 import type { Plan } from '../../types/index.js';
+import { SHELL_WHITELIST } from '../../types/index.js';
 
 type Step = Plan['payload']['steps'][number];
 
@@ -1491,7 +1520,8 @@ export function generateInstallDepsStep(archetype: string): Step | null {
     operations: [
       {
         op: 'shell',
-        command: 'pnpm install',
+        // 'pnpm install'
+        command: SHELL_WHITELIST[0],
         commit_paths: ['pnpm-lock.yaml'],
       },
     ],
@@ -1499,6 +1529,8 @@ export function generateInstallDepsStep(archetype: string): Step | null {
   };
 }
 ```
+
+Note: `SHELL_WHITELIST[0]` resolves to `'pnpm install'` — the literal-union narrowing keeps the existing test (which asserts `command === 'pnpm install'`) passing without modification.
 
 - [ ] **Step 3: Run, verify, commit**
 
@@ -1588,7 +1620,24 @@ git commit -m "feat(retrofit): steps/write-marker.ts — placeholder write_file 
 - Create: `src/retrofit/plan-builder/warnings.ts`
 - Create: `src/retrofit/plan-builder/warnings.test.ts`
 
-Cross-cutting warning catalog. Plan-builder's main walks the snapshot + overlay + step plan and emits the per-§5/§6/§6.5/§6.7 warning codes.
+Cross-cutting warning catalog. `collectWarnings` is a pure function over its inputs (snapshot fields + overlay + archetype + plugins + raw user settings.json). It emits the **ten** warning codes from §5/§6/§6.5/§6.6/§6.7/§8/§9:
+
+| Code | When |
+|---|---|
+| `MODULE_TYPE_CHANGE` | user `package.json.type` is not `'module'` |
+| `PKG_FIELDS_OVERWRITTEN` | user has a `scripts.<name>` entry that janus's package.json sets |
+| `WORKFLOW_REFERENCES_DISPLACED_TOOL` | a non-janus workflow references a displaced tool |
+| `UNKNOWN_TOOL` | a tool detected in the analyzer that isn't in the recognized allowlist |
+| `WARN_OVERWRITE_USER_KIT` | a `.claude/*` baseline file is `present_differs` and the overlay re-writes it |
+| `INSTALL_DEPS_MAY_FAIL` | the install-deps step is in the plan (i.e., archetype ≠ monorepo-root) |
+| `DEP_VERSION_CONFLICT` | janus pins a devDep range disjoint from the user's pinned range |
+| `SETTINGS_PERMISSION_REDUNDANT` | a janus-shipped permission entry is identical to or a strict superset of an existing user entry |
+| `SETTINGS_HOOK_CONFLICT` | janus and user both register a hook on the same `(event, matcher)` pair with different commands |
+| `SETTINGS_SCALAR_CONFLICT` | a top-level scalar field (`model`, `theme`, `cleanupPeriodDays`, …) is set by the user to a value different from janus's default |
+
+Plan 2 dependency: `ClaudeKitSnapshot` MUST carry a `settings_json?: unknown` field — the parsed contents of `.claude/settings.json` if present. Plan 2's `claude-kit` analyzer already produces this per its file-content snapshot; if a future revision drops it, the implementer of Plan 3 must add it back to `ClaudeKitSnapshot` (forward-reference comment in `warnings.ts`). Plan 3 reads it via `snapshot.claude_kit.settings_json` (Task 12 wiring).
+
+Plan 2 dependency: the analyzer detects `DEP_VERSION_CONFLICT` candidates and exposes them as `RepoSnapshot.dep_version_conflicts: Array<{ name: string; janus_range: string; user_range: string }>` (warning name already in spec §5; Plan 2 owns the detection). `collectWarnings` simply maps these into Warning entries.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -1596,25 +1645,77 @@ Cross-cutting warning catalog. Plan-builder's main walks the snapshot + overlay 
 
 ```ts
 import { describe, expect, it } from 'vitest';
-import type { PackageJsonSnapshot, RepoSnapshot, WorkflowFile } from '../types/index.js';
+import type {
+  BaselineFileStatus,
+  ClaudeKitSnapshot,
+  OverlayResult,
+  OverlayTree,
+  PackageJsonSnapshot,
+  WorkflowFile,
+} from '../types/index.js';
 import { collectWarnings } from './warnings.js';
 
-describe('collectWarnings', () => {
+const emptyKit: ClaudeKitSnapshot = {
+  has_claude_dir: false,
+  has_settings_json: false,
+  has_claude_md: false,
+  has_pre_janus_md: false,
+  hooks: [],
+  skills: [],
+  misc: [],
+};
+
+const baseSnap = (over: Partial<Parameters<typeof collectWarnings>[0]['snapshot']> = {}) => ({
+  ci_workflows: [] as WorkflowFile[],
+  unrecognized_tools: [] as string[],
+  dep_version_conflicts: [] as Array<{ name: string; janus_range: string; user_range: string }>,
+  claude_kit: emptyKit,
+  ...over,
+});
+
+const overlayWith = (paths: string[]): OverlayResult => {
+  const tree: OverlayTree = new Map();
+  for (const p of paths) tree.set(p, { content: Buffer.from('x'), mode: 0o644 });
+  return { tree, gitignore_lines: [], archetype_only: new Set() };
+};
+
+describe('collectWarnings — existing four', () => {
   it('emits MODULE_TYPE_CHANGE when user pkg type is commonjs', () => {
     const pkg: PackageJsonSnapshot = { raw: {}, type: 'commonjs' };
-    const ws = collectWarnings({ package_json: pkg, ci_workflows: [], unrecognized_tools: [] });
+    const ws = collectWarnings({
+      snapshot: baseSnap(),
+      baseline_files: [],
+      overlay: overlayWith([]),
+      archetype: 'generic-ts',
+      plugins: [],
+      package_json: pkg,
+    });
     expect(ws.find((w) => w.code === 'MODULE_TYPE_CHANGE')).toBeDefined();
   });
 
   it('emits MODULE_TYPE_CHANGE when user pkg has no type field', () => {
     const pkg: PackageJsonSnapshot = { raw: { name: 'p' } };
-    const ws = collectWarnings({ package_json: pkg, ci_workflows: [], unrecognized_tools: [] });
+    const ws = collectWarnings({
+      snapshot: baseSnap(),
+      baseline_files: [],
+      overlay: overlayWith([]),
+      archetype: 'generic-ts',
+      plugins: [],
+      package_json: pkg,
+    });
     expect(ws.find((w) => w.code === 'MODULE_TYPE_CHANGE')).toBeDefined();
   });
 
   it('does NOT emit MODULE_TYPE_CHANGE when user pkg already module', () => {
     const pkg: PackageJsonSnapshot = { raw: {}, type: 'module' };
-    const ws = collectWarnings({ package_json: pkg, ci_workflows: [], unrecognized_tools: [] });
+    const ws = collectWarnings({
+      snapshot: baseSnap(),
+      baseline_files: [],
+      overlay: overlayWith([]),
+      archetype: 'generic-ts',
+      plugins: [],
+      package_json: pkg,
+    });
     expect(ws.find((w) => w.code === 'MODULE_TYPE_CHANGE')).toBeUndefined();
   });
 
@@ -1624,7 +1725,14 @@ describe('collectWarnings', () => {
       type: 'module',
       scripts: { test: 'jest', lint: 'eslint .' },
     };
-    const ws = collectWarnings({ package_json: pkg, ci_workflows: [], unrecognized_tools: [] });
+    const ws = collectWarnings({
+      snapshot: baseSnap(),
+      baseline_files: [],
+      overlay: overlayWith([]),
+      archetype: 'generic-ts',
+      plugins: [],
+      package_json: pkg,
+    });
     const overrides = ws.filter((w) => w.code === 'PKG_FIELDS_OVERWRITTEN');
     expect(overrides.length).toBeGreaterThanOrEqual(2);
   });
@@ -1634,7 +1742,13 @@ describe('collectWarnings', () => {
       { path: '.github/workflows/qa.yml', references_displaced_tool: ['npm', 'eslint'] },
       { path: '.github/workflows/ci.yml', references_displaced_tool: [] },
     ];
-    const ws = collectWarnings({ ci_workflows: wf, unrecognized_tools: [] });
+    const ws = collectWarnings({
+      snapshot: baseSnap({ ci_workflows: wf }),
+      baseline_files: [],
+      overlay: overlayWith([]),
+      archetype: 'monorepo-root',
+      plugins: [],
+    });
     const matched = ws.filter((w) => w.code === 'WORKFLOW_REFERENCES_DISPLACED_TOOL');
     expect(matched).toHaveLength(1);
     expect(matched[0]!.evidence).toEqual(['.github/workflows/qa.yml']);
@@ -1645,13 +1759,155 @@ describe('collectWarnings', () => {
       { path: '.github/workflows/ci.yml', references_displaced_tool: ['eslint'] },
       { path: '.github/workflows/deploy.yml', references_displaced_tool: ['eslint'] },
     ];
-    const ws = collectWarnings({ ci_workflows: wf, unrecognized_tools: [] });
+    const ws = collectWarnings({
+      snapshot: baseSnap({ ci_workflows: wf }),
+      baseline_files: [],
+      overlay: overlayWith([]),
+      archetype: 'monorepo-root',
+      plugins: [],
+    });
     expect(ws.filter((w) => w.code === 'WORKFLOW_REFERENCES_DISPLACED_TOOL')).toHaveLength(0);
   });
 
   it('emits UNKNOWN_TOOL per unrecognized tool', () => {
-    const ws = collectWarnings({ ci_workflows: [], unrecognized_tools: ['lint-staged', 'turbo'] });
+    const ws = collectWarnings({
+      snapshot: baseSnap({ unrecognized_tools: ['lint-staged', 'turbo'] }),
+      baseline_files: [],
+      overlay: overlayWith([]),
+      archetype: 'monorepo-root',
+      plugins: [],
+    });
     expect(ws.filter((w) => w.code === 'UNKNOWN_TOOL')).toHaveLength(2);
+  });
+});
+
+describe('collectWarnings — WARN_OVERWRITE_USER_KIT', () => {
+  it('emits per .claude/* path that is present_differs and present in overlay', () => {
+    const baseline: BaselineFileStatus[] = [
+      { path: '.claude/skills/foo.md', status: 'present_differs', pre_state_hash: 'sha256:aa' },
+      { path: '.claude/hooks/bar.sh', status: 'present_identical', pre_state_hash: 'sha256:bb' },
+      { path: 'biome.jsonc', status: 'present_differs', pre_state_hash: 'sha256:cc' },
+    ];
+    const overlay = overlayWith(['.claude/skills/foo.md', '.claude/hooks/bar.sh', 'biome.jsonc']);
+    const ws = collectWarnings({
+      snapshot: baseSnap(),
+      baseline_files: baseline,
+      overlay,
+      archetype: 'monorepo-root',
+      plugins: [],
+    });
+    const overwrites = ws.filter((w) => w.code === 'WARN_OVERWRITE_USER_KIT');
+    expect(overwrites).toHaveLength(1);
+    expect(overwrites[0]!.evidence).toEqual(['.claude/skills/foo.md']);
+  });
+});
+
+describe('collectWarnings — INSTALL_DEPS_MAY_FAIL', () => {
+  it('emits when archetype !== monorepo-root', () => {
+    const ws = collectWarnings({
+      snapshot: baseSnap(),
+      baseline_files: [],
+      overlay: overlayWith([]),
+      archetype: 'generic-ts',
+      plugins: [],
+    });
+    expect(ws.find((w) => w.code === 'INSTALL_DEPS_MAY_FAIL')).toBeDefined();
+  });
+
+  it('does NOT emit for monorepo-root', () => {
+    const ws = collectWarnings({
+      snapshot: baseSnap(),
+      baseline_files: [],
+      overlay: overlayWith([]),
+      archetype: 'monorepo-root',
+      plugins: [],
+    });
+    expect(ws.find((w) => w.code === 'INSTALL_DEPS_MAY_FAIL')).toBeUndefined();
+  });
+});
+
+describe('collectWarnings — DEP_VERSION_CONFLICT', () => {
+  it('emits per analyzer-detected conflict', () => {
+    const ws = collectWarnings({
+      snapshot: baseSnap({
+        dep_version_conflicts: [
+          { name: 'typescript', janus_range: '^5.7.0', user_range: '~4.9.0' },
+          { name: 'vitest', janus_range: '^3.0.0', user_range: '^1.0.0' },
+        ],
+      }),
+      baseline_files: [],
+      overlay: overlayWith([]),
+      archetype: 'generic-ts',
+      plugins: [],
+    });
+    const conflicts = ws.filter((w) => w.code === 'DEP_VERSION_CONFLICT');
+    expect(conflicts).toHaveLength(2);
+    expect(conflicts[0]!.evidence[0]).toMatch(/^package\.json:devDependencies\./);
+  });
+});
+
+describe('collectWarnings — SETTINGS_PERMISSION_REDUNDANT', () => {
+  it('emits per janus permission identical to user entry', () => {
+    const userSettings = {
+      permissions: { allow: ['Bash(pnpm *)', 'Read(**)'], deny: ['Bash(rm -rf *)'] },
+    };
+    const ws = collectWarnings({
+      snapshot: baseSnap({ claude_kit: { ...emptyKit, settings_json: userSettings } }),
+      baseline_files: [],
+      overlay: overlayWith([]),
+      archetype: 'monorepo-root',
+      plugins: [],
+      user_settings_json: userSettings,
+    });
+    const reds = ws.filter((w) => w.code === 'SETTINGS_PERMISSION_REDUNDANT');
+    // 'Bash(pnpm *)' and 'Read(**)' are both in the janus default + user; expect at least 2.
+    expect(reds.length).toBeGreaterThanOrEqual(2);
+    expect(reds[0]!.evidence[0]).toMatch(/^\.claude\/settings\.json:permissions\.(allow|deny)$/);
+  });
+});
+
+describe('collectWarnings — SETTINGS_HOOK_CONFLICT', () => {
+  it('emits when user hook command differs from janus on same event', () => {
+    const userSettings = {
+      hooks: {
+        SessionStart: [
+          {
+            matcher: 'startup|clear|compact',
+            hooks: [{ type: 'command', command: '/usr/local/bin/my-session-start.sh' }],
+          },
+        ],
+      },
+    };
+    const ws = collectWarnings({
+      snapshot: baseSnap({ claude_kit: { ...emptyKit, settings_json: userSettings } }),
+      baseline_files: [],
+      overlay: overlayWith([]),
+      archetype: 'monorepo-root',
+      plugins: [],
+      user_settings_json: userSettings,
+    });
+    const conflicts = ws.filter((w) => w.code === 'SETTINGS_HOOK_CONFLICT');
+    expect(conflicts.length).toBeGreaterThanOrEqual(1);
+    expect(conflicts[0]!.evidence[0]).toBe('.claude/settings.json:hooks.SessionStart');
+  });
+});
+
+describe('collectWarnings — SETTINGS_SCALAR_CONFLICT', () => {
+  it('emits per top-level scalar where user differs from janus default', () => {
+    const userSettings = { cleanupPeriodDays: 30, theme: 'dark' };
+    const ws = collectWarnings({
+      snapshot: baseSnap({ claude_kit: { ...emptyKit, settings_json: userSettings } }),
+      baseline_files: [],
+      overlay: overlayWith([]),
+      archetype: 'monorepo-root',
+      plugins: [],
+      user_settings_json: userSettings,
+    });
+    const scalars = ws.filter((w) => w.code === 'SETTINGS_SCALAR_CONFLICT');
+    // cleanupPeriodDays differs from janus's default of 7; theme is unset by janus, so
+    // it must NOT trigger this warning. Expect exactly one (cleanupPeriodDays).
+    expect(scalars).toHaveLength(1);
+    expect(scalars[0]!.evidence[0]).toBe('.claude/settings.json:cleanupPeriodDays');
   });
 });
 ```
@@ -1661,7 +1917,17 @@ describe('collectWarnings', () => {
 `src/retrofit/plan-builder/warnings.ts`:
 
 ```ts
-import type { PackageJsonSnapshot, Plan, WorkflowFile } from '../types/index.js';
+import type {
+  Archetype,
+  BaselineFileStatus,
+  ClaudeKitSnapshot,
+  OverlayResult,
+  PackageJsonSnapshot,
+  Plan,
+  RepoSnapshot,
+  WorkflowFile,
+} from '../types/index.js';
+import { buildSettingsBase, type SettingsBase } from './steps/settings-base.js';
 
 type Warning = Plan['payload']['warnings'][number];
 
@@ -1686,18 +1952,25 @@ const JANUS_WORKFLOWS = new Set([
   '.github/workflows/claude-autofix.yml',
 ]);
 
-export type WarningInput = {
+export type CollectWarningsInput = {
+  snapshot: Omit<RepoSnapshot, 'baseline_files'>;
+  baseline_files: BaselineFileStatus[];
+  overlay: OverlayResult;
+  archetype: Archetype;
+  plugins: string[];
+  /** raw parsed user settings.json (undefined if absent). Mirrors snapshot.claude_kit.settings_json. */
+  user_settings_json?: unknown;
+  /** Optional convenience pass-through for MODULE_TYPE_CHANGE / PKG_FIELDS_OVERWRITTEN. */
   package_json?: PackageJsonSnapshot;
-  ci_workflows: WorkflowFile[];
-  unrecognized_tools: string[];
 };
 
-export function collectWarnings(input: WarningInput): Warning[] {
+export function collectWarnings(input: CollectWarningsInput): Warning[] {
   const ws: Warning[] = [];
+  const pkg = input.package_json ?? input.snapshot.package_json;
 
-  // MODULE_TYPE_CHANGE
-  if (input.package_json && input.package_json.type !== 'module') {
-    const from = input.package_json.type ?? 'unset';
+  // -------- MODULE_TYPE_CHANGE --------
+  if (pkg && pkg.type !== 'module') {
+    const from = pkg.type ?? 'unset';
     ws.push({
       code: 'MODULE_TYPE_CHANGE',
       message: `package.json type will change from '${from}' to 'module'`,
@@ -1705,9 +1978,9 @@ export function collectWarnings(input: WarningInput): Warning[] {
     });
   }
 
-  // PKG_FIELDS_OVERWRITTEN — one per janus-owned script the user has set.
-  if (input.package_json?.scripts) {
-    for (const [name, value] of Object.entries(input.package_json.scripts)) {
+  // -------- PKG_FIELDS_OVERWRITTEN --------
+  if (pkg?.scripts) {
+    for (const [name, value] of Object.entries(pkg.scripts)) {
       if (JANUS_SCRIPTS.has(name)) {
         ws.push({
           code: 'PKG_FIELDS_OVERWRITTEN',
@@ -1718,8 +1991,8 @@ export function collectWarnings(input: WarningInput): Warning[] {
     }
   }
 
-  // WORKFLOW_REFERENCES_DISPLACED_TOOL
-  for (const wf of input.ci_workflows) {
+  // -------- WORKFLOW_REFERENCES_DISPLACED_TOOL --------
+  for (const wf of input.snapshot.ci_workflows ?? []) {
     if (JANUS_WORKFLOWS.has(wf.path)) continue;
     if (wf.references_displaced_tool.length === 0) continue;
     ws.push({
@@ -1729,8 +2002,8 @@ export function collectWarnings(input: WarningInput): Warning[] {
     });
   }
 
-  // UNKNOWN_TOOL
-  for (const t of input.unrecognized_tools) {
+  // -------- UNKNOWN_TOOL --------
+  for (const t of input.snapshot.unrecognized_tools ?? []) {
     ws.push({
       code: 'UNKNOWN_TOOL',
       message: `${t} detected; not migrated`,
@@ -1738,18 +2011,158 @@ export function collectWarnings(input: WarningInput): Warning[] {
     });
   }
 
+  // -------- WARN_OVERWRITE_USER_KIT --------
+  // For each .claude/* baseline that is present_differs AND in the overlay tree, emit one warning.
+  for (const b of input.baseline_files) {
+    if (!b.path.startsWith('.claude/')) continue;
+    if (b.status !== 'present_differs') continue;
+    if (!input.overlay.tree.has(b.path)) continue;
+    ws.push({
+      code: 'WARN_OVERWRITE_USER_KIT',
+      message: `.claude/${b.path.slice('.claude/'.length)} will be overwritten by janus version`,
+      evidence: [b.path],
+    });
+  }
+
+  // -------- INSTALL_DEPS_MAY_FAIL --------
+  if (input.archetype !== 'monorepo-root') {
+    ws.push({
+      code: 'INSTALL_DEPS_MAY_FAIL',
+      message:
+        'pnpm install may fail on peer-dep / registry / network issues; lockfile and node_modules left dirty if so',
+      evidence: [],
+    });
+  }
+
+  // -------- DEP_VERSION_CONFLICT --------
+  for (const c of input.snapshot.dep_version_conflicts ?? []) {
+    ws.push({
+      code: 'DEP_VERSION_CONFLICT',
+      message: `${c.name}: janus pins ${c.janus_range}, user has ${c.user_range} (no overlap)`,
+      evidence: [`package.json:devDependencies.${c.name}`],
+    });
+  }
+
+  // -------- SETTINGS_* (only when the user has a settings.json to compare against) --------
+  const userSettings = (input.user_settings_json ?? input.snapshot.claude_kit?.settings_json) as
+    | Record<string, unknown>
+    | undefined;
+  if (userSettings && typeof userSettings === 'object') {
+    // Use a representative SETTINGS_BASE — we only need janus's defaults to compare against the user's.
+    // Workload + plugins do not affect the keys we compare.
+    const janus = buildSettingsBase({ workload: '_compare_', plugins: input.plugins });
+    ws.push(...settingsPermissionRedundancies(janus, userSettings));
+    ws.push(...settingsHookConflicts(janus, userSettings));
+    ws.push(...settingsScalarConflicts(janus, userSettings));
+  }
+
   return ws;
 }
+
+function settingsPermissionRedundancies(
+  janus: SettingsBase,
+  user: Record<string, unknown>,
+): Warning[] {
+  const out: Warning[] = [];
+  const userPerms = (user.permissions as { allow?: string[]; deny?: string[] } | undefined) ?? {};
+  for (const kind of ['allow', 'deny'] as const) {
+    const userList = userPerms[kind] ?? [];
+    const janusList = janus.permissions?.[kind] ?? [];
+    for (const j of janusList) {
+      const match = userList.find((u) => u === j || isStrictSuperset(u, j));
+      if (match !== undefined) {
+        out.push({
+          code: 'SETTINGS_PERMISSION_REDUNDANT',
+          message: `${j} is redundant with existing ${match}`,
+          evidence: [`.claude/settings.json:permissions.${kind}`],
+        });
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * Strict-superset check for permission patterns. Conservative: returns true when `user`
+ * differs from `janus` only by widening one or more glob segments to `**`. Anything more
+ * exotic falls back to false (no warning emitted — false negatives are acceptable here).
+ */
+function isStrictSuperset(user: string, janus: string): boolean {
+  if (user === janus) return false;
+  const u = user.replaceAll('**', '');
+  const j = janus.replaceAll('**', '');
+  // Cheap textual heuristic: if user contains '' where janus has a literal segment,
+  // and the rest matches, treat as superset.
+  return u.includes('') && j.split('').every((seg) => user.includes(seg));
+}
+
+function settingsHookConflicts(janus: SettingsBase, user: Record<string, unknown>): Warning[] {
+  const out: Warning[] = [];
+  const userHooks =
+    (user.hooks as Record<string, Array<{ matcher?: string; hooks: Array<{ command: string }> }>>
+    | undefined) ?? {};
+  const janusHooks = janus.hooks ?? {};
+  for (const [event, janusEntries] of Object.entries(janusHooks)) {
+    const userEntries = userHooks[event] ?? [];
+    for (const je of janusEntries) {
+      for (const ue of userEntries) {
+        const sameMatcher = (je.matcher ?? '') === (ue.matcher ?? '');
+        if (!sameMatcher) continue;
+        const jcmd = je.hooks[0]?.command ?? '';
+        const ucmd = ue.hooks[0]?.command ?? '';
+        if (jcmd && ucmd && basename(jcmd) !== basename(ucmd)) {
+          out.push({
+            code: 'SETTINGS_HOOK_CONFLICT',
+            message: `janus hook ${jcmd} conflicts with user hook ${ucmd} on event ${event}; keeping user`,
+            evidence: [`.claude/settings.json:hooks.${event}`],
+          });
+        }
+      }
+    }
+  }
+  return out;
+}
+
+function basename(p: string): string {
+  const idx = p.lastIndexOf('/');
+  return idx >= 0 ? p.slice(idx + 1) : p;
+}
+
+function settingsScalarConflicts(janus: SettingsBase, user: Record<string, unknown>): Warning[] {
+  const out: Warning[] = [];
+  const SCALAR_FIELDS: Array<keyof SettingsBase> = ['cleanupPeriodDays'];
+  for (const field of SCALAR_FIELDS) {
+    const j = (janus as Record<string, unknown>)[field as string];
+    const u = user[field as string];
+    if (j === undefined) continue; // janus does not set this field — no conflict
+    if (u === undefined) continue; // user has not set it — janus value applies
+    if (u === j) continue;
+    out.push({
+      code: 'SETTINGS_SCALAR_CONFLICT',
+      message: `${String(field)}: user value ${JSON.stringify(u)} preserved; janus default ${JSON.stringify(j)} not applied`,
+      evidence: [`.claude/settings.json:${String(field)}`],
+    });
+  }
+  return out;
+}
 ```
+
+Notes for the implementer:
+
+- `WorkflowFile`, `BaselineFileStatus`, `OverlayResult`, `Archetype`, `RepoSnapshot.dep_version_conflicts`, and `ClaudeKitSnapshot.settings_json` are all assumed to exist on Plan 1 / Plan 2's surface. If `dep_version_conflicts` or `settings_json` is missing from the current types barrel when you start implementing, add a `// TODO(plan-2): ensure ClaudeKitSnapshot.settings_json is populated by analyzer` comment and a typecheck-failing reference to make the dependency loud, then push the fix into Plan 2.
+- The `SCALAR_FIELDS` list intentionally starts with only `cleanupPeriodDays` — the only scalar `buildSettingsBase` currently emits. Add `model` / `theme` / etc. when janus's `SETTINGS_BASE` grows them.
+- `isStrictSuperset` is a deliberately cheap heuristic. False negatives (no warning when one would be technically valid) are acceptable; false positives (warning when patterns are actually disjoint) would be noisy. The test exercises only the identical-string path; the superset path is best-effort.
 
 - [ ] **Step 3: Run, verify, commit**
 
 ```bash
-pnpm test:unit -- warnings.test
+pnpm test src/retrofit/plan-builder/warnings.test.ts
 pnpm typecheck
 git add src/retrofit/plan-builder/warnings.ts src/retrofit/plan-builder/warnings.test.ts
-git commit -m "feat(retrofit): plan-builder/warnings.ts — MODULE_TYPE_CHANGE/PKG_FIELDS_OVERWRITTEN/WORKFLOW/UNKNOWN_TOOL emission"
+git commit -m "feat(plan-builder): add WARN_OVERWRITE_USER_KIT, INSTALL_DEPS_MAY_FAIL, DEP_VERSION_CONFLICT, SETTINGS_* warnings"
 ```
+
+Expected: PASS. Each of the ten codes (`MODULE_TYPE_CHANGE`, `PKG_FIELDS_OVERWRITTEN`, `WORKFLOW_REFERENCES_DISPLACED_TOOL`, `UNKNOWN_TOOL`, `WARN_OVERWRITE_USER_KIT`, `INSTALL_DEPS_MAY_FAIL`, `DEP_VERSION_CONFLICT`, `SETTINGS_PERMISSION_REDUNDANT`, `SETTINGS_HOOK_CONFLICT`, `SETTINGS_SCALAR_CONFLICT`) has at least one passing test case. The implementer must verify this coverage explicitly before committing — if a code is unreached, add a fixture for it.
 
 ---
 
@@ -1927,11 +2340,12 @@ export function buildPlan(input: BuildPlanInput): Plan {
     }),
   );
 
-  // Archetype-only entries: anything in the overlay tree that came from the archetype walk.
-  // Detection: re-walk the templates dir to know which files came from archetype only. Cheap because
-  // we just need filenames. For test coverage we detect via "exists in overlay but not in shared".
-  const archetypeOnly = computeArchetypeOnly(input);
-  rawSteps.push(...generateApplyArchetypeOverlaySteps(overlay.tree, snapshot.baseline_files, archetypeOnly));
+  // Archetype-only entries are tagged at construction time by Plan 2's overlay-tree builder
+  // and exposed on `OverlayResult.archetype_only`. Plan 3 consumes the set directly — no
+  // recompute, no helper.
+  rawSteps.push(
+    ...generateApplyArchetypeOverlaySteps(overlay.tree, snapshot.baseline_files, overlay.archetype_only),
+  );
 
   // Pre-state hashes for claude_settings_merge / claude_md_snapshot from baseline.
   const settingsBaseline = snapshot.baseline_files.find((b) => b.path === '.claude/settings.json');
@@ -1969,12 +2383,21 @@ export function buildPlan(input: BuildPlanInput): Plan {
     commit_paths: [...s.commit_paths].sort(),
   }));
 
-  // Warnings.
+  // Warnings. `collectWarnings` is a pure function over snapshot + overlay + archetype + plugins
+  // + raw user settings.json. The user_settings_json read pulls from
+  // `snapshot.claude_kit.settings_json` (Plan 2 dependency — `ClaudeKitSnapshot.settings_json`
+  // MUST exist; per Plan 2's claude-kit module it does, but if a future revision removes it,
+  // this line will fail to typecheck and that's the signal to push the fix back into Plan 2).
+  const { baseline_files: _drop, ...snapshotWithoutBaseline } = snapshot;
   const warnings = sortWarnings(
     collectWarnings({
+      snapshot: snapshotWithoutBaseline,
+      baseline_files: snapshot.baseline_files,
+      overlay,
+      archetype: archetype as Plan['payload']['archetype'],
+      plugins,
+      user_settings_json: snapshot.claude_kit.settings_json,
       package_json: snapshot.package_json,
-      ci_workflows: snapshot.ci_workflows,
-      unrecognized_tools: snapshot.unrecognized_tools,
     }),
   );
 
@@ -1996,66 +2419,23 @@ export function buildPlan(input: BuildPlanInput): Plan {
     },
   };
 }
-
-function computeArchetypeOnly(input: BuildPlanInput): Set<string> {
-  // We need the set of overlay paths that exist *only because of the archetype walk*.
-  // Since buildOverlayTree doesn't tag entries by source, recompute the shared-only overlay
-  // and diff. This is expensive in absolute terms (~2 mo invocations per file) but Plan 2's
-  // overlay-tree builder caches nothing, so the cost is paid once per buildPlan. Acceptable.
-  // (Plan 6 in a future revision could tag entries at construction time to avoid the recompute.)
-  const sharedOnly = new Set<string>();
-  for (const path of input.overlay.tree.keys()) sharedOnly.add(path);
-  // For now, emit no archetype-only steps; archetype overlay is folded into apply-shared-overlay
-  // because the overlay-tree builder doesn't yet distinguish. Future tightening is tracked in Plan 4
-  // self-review notes.
-  return new Set();
-}
 ```
 
-**Note for the implementer:** The `computeArchetypeOnly` placeholder is INTENTIONAL and explicit — Plan 2 doesn't tag overlay entries by source. Two acceptable resolutions:
-1. **Recommended:** extend `buildOverlayTree` (in this task) to return `archetype_only: Set<string>` alongside `tree` and `gitignore_lines`. This is a small, scoped change to `overlay-tree.ts` (set-tag in pass 2). Update `BuildPlanInput.overlay` type accordingly.
-2. **Alternative:** recompute by re-walking — slower but no API change. Not recommended.
+**Note for the implementer:** `archetype_only` is owned and populated by Plan 2's `buildOverlayTree` and exposed on `OverlayResult`. Plan 3 simply consumes `overlay.archetype_only` — no helper, no reach-back patch. If you find that field missing on `OverlayResult` while implementing this task, push the fix into Plan 2's overlay-tree task; do NOT introduce a placeholder set here.
 
-If you take option 1, also update overlay-tree.test.ts to assert archetype_only contains expected paths for backend-functions (e.g., `host.json`).
-
-- [ ] **Step 3: Apply the recommended overlay-tree extension**
-
-In `src/retrofit/plan-builder/overlay-tree.ts`:
-
-- Extend `OverlayResult`:
-  ```ts
-  export type OverlayResult = {
-    tree: OverlayTree;
-    gitignore_lines: string[];
-    archetype_only: Set<string>; // paths that came from the archetype walk only
-  };
-  ```
-- In `buildOverlayTree`, initialize `const archetype_only = new Set<string>()` and pass it into `walkArchetype`.
-- In `walkArchetype`, after `tree.set(rel, ...)` (and the `package.json.tmpl` and `.env.example` branches), call `archetype_only.add(rel)` for each path written.
-- Update `walkArchetype`'s package.json.tmpl branch to also `archetype_only.add('package.json')`.
-- Return `{ tree, gitignore_lines, archetype_only }`.
-
-Then in `plan-builder/index.ts`, replace `computeArchetypeOnly` with:
-
-```ts
-function computeArchetypeOnly(input: BuildPlanInput): Set<string> {
-  return input.overlay.archetype_only;
-}
-```
-
-- [ ] **Step 4: Run all plan-builder tests, verify pass**
+- [ ] **Step 3: Run all plan-builder tests, verify pass**
 
 ```bash
 pnpm test:unit -- "plan-builder"
 ```
 Expected: PASS — all existing + new tests.
 
-- [ ] **Step 5: Typecheck + commit**
+- [ ] **Step 4: Typecheck + commit**
 
 ```bash
 pnpm typecheck
-git add src/retrofit/plan-builder/index.ts src/retrofit/plan-builder/index.test.ts src/retrofit/plan-builder/overlay-tree.ts src/retrofit/plan-builder/overlay-tree.test.ts
-git commit -m "feat(retrofit): plan-builder/index.ts — compose generators, idempotency, sort + tag archetype-only"
+git add src/retrofit/plan-builder/index.ts src/retrofit/plan-builder/index.test.ts
+git commit -m "feat(retrofit): plan-builder/index.ts — compose generators, idempotency, sort, consume overlay.archetype_only"
 ```
 
 ---
@@ -2104,6 +2484,13 @@ export type DiagnoseOpts = {
   confirmPlugins?: (proposed: string[]) => Promise<string[]>;
   /** If supplied, write the plan JSON here. Otherwise return without writing. */
   outPath?: string;
+  /**
+   * Forwarded verbatim to `analyze(repoRoot, { unrecognizedToolsAllowlist })`.
+   * When omitted, the analyzer falls back to its hardcoded starter list.
+   * Plan 5's CLI loads this via `loadUnrecognizedToolsAllowlist(janusRoot)`
+   * (Plan 2) before calling `diagnose`.
+   */
+  unrecognizedToolsAllowlist?: string[];
 };
 
 export async function diagnose(opts: DiagnoseOpts): Promise<Plan> {
@@ -2112,7 +2499,9 @@ export async function diagnose(opts: DiagnoseOpts): Promise<Plan> {
   const targetBranch = opts.targetBranch ?? 'janus/retrofit';
   const now = opts.now ?? new Date();
 
-  const snapshot = analyze(opts.repoRoot);
+  const snapshot = analyze(opts.repoRoot, {
+    ...(opts.unrecognizedToolsAllowlist ? { unrecognizedToolsAllowlist: opts.unrecognizedToolsAllowlist } : {}),
+  });
 
   const slots = await resolveSlots({
     snapshot,
@@ -2294,7 +2683,7 @@ Plan 3 complete. End state:
 - `buildPlan(...)` produces valid `Plan` JSON for every fixture×archetype combination.
 - `payload` is byte-stable across runs (proved by 5+ test cases).
 - Step ordering enforces `root-dotfiles → install-deps` and `set-package-manager → install-deps` invariants.
-- Warnings catalog covers MODULE_TYPE_CHANGE, PKG_FIELDS_OVERWRITTEN, WORKFLOW_REFERENCES_DISPLACED_TOOL, UNKNOWN_TOOL.
+- Warnings catalog covers all ten codes: MODULE_TYPE_CHANGE, PKG_FIELDS_OVERWRITTEN, WORKFLOW_REFERENCES_DISPLACED_TOOL, UNKNOWN_TOOL, WARN_OVERWRITE_USER_KIT, INSTALL_DEPS_MAY_FAIL, DEP_VERSION_CONFLICT, SETTINGS_PERMISSION_REDUNDANT, SETTINGS_HOOK_CONFLICT, SETTINGS_SCALAR_CONFLICT.
 - `diagnose()` orchestrator wires it all end-to-end without CLI parsing.
 
 ---
@@ -2305,20 +2694,23 @@ Plan 3 complete. End state:
    - §6.6 categories 1–7 → step generators in Tasks 3–10
    - §6.6 ordering rules → `determinism.ts` Task 2
    - §6.6.5 archetype-vs-displaced-tools constraint → assertion in apply-archetype-overlay Task 6
+   - §6.6 WARN_OVERWRITE_USER_KIT → `warnings.ts` Task 11 (lands here, **not deferred to Plan 4**)
    - §6.7 WORKFLOW warning emission → warnings.ts Task 11
    - §6.8 per-op omission → idempotency.ts Task 1
    - §7 schema validation → end-to-end test Task 12 (validatePlan after buildPlan)
    - §7 determinism contract → integration test Task 13
    - §8 SETTINGS_BASE construction → settings-base.ts Task 7
+   - §8 SETTINGS_PERMISSION_REDUNDANT / SETTINGS_HOOK_CONFLICT / SETTINGS_SCALAR_CONFLICT → `warnings.ts` Task 11 (lands here, **not deferred to Plan 4**)
+   - §6.5 DEP_VERSION_CONFLICT → `warnings.ts` Task 11 (analyzer detects, plan-builder emits — **not deferred to Plan 4**)
+   - §9 INSTALL_DEPS_MAY_FAIL → `warnings.ts` Task 11 (lands here, **not deferred to Plan 4**)
 
-2. **Out-of-scope discipline:** No executor mutation, no CLI argv parsing, no real prompt UI. `bin/janus.js` untouched.
+2. **Out-of-scope discipline:** No executor mutation, no CLI argv parsing, no real prompt UI. `bin/janus.js` untouched. No retroactive edits to Plan 2's `overlay-tree.ts` (Plan 2 owns `OverlayResult.archetype_only` outright; Plan 3 only consumes it).
 
 3. **Deferred items intentionally documented:**
-   - `WARN_OVERWRITE_USER_KIT` per overwritten skill/hook is computable from `claude_kit.skills` × overlay-tree `.claude/skills/*`. Plan 4 emits this warning at the executor level (it has the user's pre-state + the about-to-write content). Documented in warnings.ts comments.
-   - `DEP_VERSION_CONFLICT` requires comparing user's pinned versions against janus's pins. Janus's pins are extractable from the rendered `package.json` already in the overlay tree; comparison logic added in Plan 4 alongside `claude_settings_merge` execution. Documented in warnings.ts.
    - `commit_message` for some steps may be cosmetically improved during dogfooding. v0.1 uses the `chore: <verb>` style throughout per §7.
+   - The six warnings previously deferred to Plan 4 (`WARN_OVERWRITE_USER_KIT`, `INSTALL_DEPS_MAY_FAIL`, `DEP_VERSION_CONFLICT`, `SETTINGS_PERMISSION_REDUNDANT`, `SETTINGS_HOOK_CONFLICT`, `SETTINGS_SCALAR_CONFLICT`) are now emitted in Plan 3's `warnings.ts`. Plan 4 may surface them in pre-flight UX but does not own emission.
 
-4. **Type consistency:** every step generator returns `Plan['payload']['steps'][number]`. Operation types match the schema discriminated union. `SlotMap` shape matches `Plan['payload']['slots']`.
+4. **Type consistency:** every step generator returns `Plan['payload']['steps'][number]`. Operation types match the schema discriminated union. `SlotMap` shape matches `Plan['payload']['slots']`. `SHELL_WHITELIST[i]` literal-narrowing keeps every `op: 'shell'` typed as the exact whitelist entry — no `string` widening at emit sites.
 
 ---
 
