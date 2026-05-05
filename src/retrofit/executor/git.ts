@@ -6,7 +6,10 @@ export function git(cwd: string, args: string[]): string {
 }
 
 export function modifiedPaths(cwd: string): string[] {
-  const out = git(cwd, ['status', '--porcelain']);
+  // -uall expands untracked-dir entries (`.github/`) into individual files so the
+  // step driver can match them against `commit_paths`. Pre-flight already enforces
+  // a clean tree, so the per-step listing is bounded to files this run produced.
+  const out = git(cwd, ['status', '--porcelain', '-uall']);
   return out
     .split('\n')
     .filter(Boolean)
