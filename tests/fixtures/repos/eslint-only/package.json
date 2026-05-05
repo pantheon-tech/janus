@@ -1,0 +1,10 @@
+{
+  "name": "eslint-only-repo",
+  "version": "0.0.0",
+  "scripts": {
+    "lint": "eslint ."
+  },
+  "devDependencies": {
+    "eslint": "^8.0.0"
+  }
+}

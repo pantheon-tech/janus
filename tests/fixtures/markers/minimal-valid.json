@@ -1,0 +1,26 @@
+{
+  "schema_version": "1",
+  "janus_version": "0.1.0",
+  "archetype": "generic-ts",
+  "applied_at": "2026-05-05T00:00:00.000Z",
+  "applied_steps": [],
+  "skipped_steps": [],
+  "slots": {
+    "workload": "example",
+    "description": "Example workload",
+    "archetype": "generic-ts",
+    "github_org": "pantheon-tech",
+    "author": "Daniel Skipper",
+    "author_email": "daniel@skipper.kiwi",
+    "node_version": "24",
+    "license": "MIT",
+    "region": "australiaeast",
+    "template_version": "v0.1.0",
+    "year": "2026",
+    "date": "2026-05-05",
+    "base_branch": "staging"
+  },
+  "plugins": [],
+  "shared_overlay_version": "0.1.0",
+  "archetype_overlay_version": "0.1.0"
+}

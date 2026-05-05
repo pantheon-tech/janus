@@ -1,0 +1,6 @@
+{
+  "name": "already-janus-repo",
+  "version": "0.0.0",
+  "type": "module",
+  "packageManager": "pnpm@9.7.0"
+}

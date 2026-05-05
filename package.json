@@ -8,6 +8,7 @@
   },
   "files": [
     "bin",
+    "dist",
     "scripts",
     "templates",
     "user-scope",
@@ -21,17 +22,25 @@
   },
   "packageManager": "pnpm@10.33.2",
   "scripts": {
-    "lint": "biome check biome.jsonc package.json scripts bin",
-    "format": "biome format --write biome.jsonc package.json scripts bin",
-    "check": "biome check --write biome.jsonc package.json scripts bin",
-    "test": "bash tests/scaffold-smoke-test.sh && bash tests/bootstrap-smoke-test.sh",
+    "lint": "biome check biome.jsonc package.json scripts bin src",
+    "format": "biome format --write biome.jsonc package.json scripts bin src",
+    "check": "biome check --write biome.jsonc package.json scripts bin src",
+    "typecheck": "tsc --noEmit",
+    "build": "tsc && cp src/retrofit/schema/*.json dist/retrofit/schema/",
+    "test:unit": "vitest run",
+    "test": "bash tests/scaffold-smoke-test.sh && bash tests/bootstrap-smoke-test.sh && pnpm test:unit",
     "prepare": "lefthook install || true"
   },
   "devDependencies": {
     "@biomejs/biome": "~2.4.13",
     "@commitlint/cli": "~20.5.2",
     "@commitlint/config-conventional": "~20.5.0",
-    "lefthook": "~2.1.6"
+    "@types/node": "~24.0.0",
+    "ajv": "~8.17.1",
+    "ajv-formats": "~3.0.1",
+    "lefthook": "~2.1.6",
+    "typescript": "~5.7.0",
+    "vitest": "~3.0.0"
   },
   "repository": {
     "type": "git",

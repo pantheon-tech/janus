@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://janus.pantheon.tech/schemas/marker.schema.json",
+  "title": "JanusMarker",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "janus_version",
+    "archetype",
+    "applied_at",
+    "applied_steps",
+    "skipped_steps",
+    "slots",
+    "plugins",
+    "shared_overlay_version",
+    "archetype_overlay_version"
+  ],
+  "properties": {
+    "schema_version": { "const": "1" },
+    "janus_version": { "type": "string" },
+    "archetype": {
+      "enum": [
+        "generic-ts",
+        "backend-functions",
+        "backend-container-app",
+        "frontend-vite-react",
+        "mcp-server",
+        "monorepo-root"
+      ]
+    },
+    "applied_at": { "type": "string", "format": "date-time" },
+    "applied_steps": { "type": "array", "items": { "type": "string" } },
+    "skipped_steps": { "type": "array", "items": { "type": "string" } },
+    "slots": {
+      "type": "object",
+      "additionalProperties": { "type": "string" },
+      "required": [
+        "workload",
+        "description",
+        "archetype",
+        "github_org",
+        "author",
+        "author_email",
+        "node_version",
+        "license",
+        "region",
+        "template_version",
+        "year",
+        "date",
+        "base_branch"
+      ]
+    },
+    "plugins": { "type": "array", "items": { "type": "string" } },
+    "shared_overlay_version": { "type": "string" },
+    "archetype_overlay_version": { "type": "string" }
+  }
+}

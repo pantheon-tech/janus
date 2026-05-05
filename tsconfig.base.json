@@ -21,7 +21,7 @@
     "sourceMap": true,
     "removeComments": false,
     "preserveConstEnums": true,
-    "ignoreDeprecations": "6.0"
+    "ignoreDeprecations": "5.0"
   },
   "exclude": ["node_modules", "dist", "build", "out", "coverage"]
 }

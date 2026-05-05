@@ -1,0 +1,26 @@
+{
+  "schema_version": "1",
+  "janus_version": "0.1.0",
+  "archetype": "generic-ts",
+  "applied_at": "2026-04-01T10:00:00Z",
+  "applied_steps": ["root-dotfiles", "root-configs", "write-marker"],
+  "skipped_steps": [],
+  "slots": {
+    "workload": "alreadyjanus",
+    "description": "Pre-retrofitted fixture",
+    "archetype": "generic-ts",
+    "github_org": "pantheon-tech",
+    "author": "Daniel Smith",
+    "author_email": "daniel@example.com",
+    "node_version": "24",
+    "license": "MIT",
+    "region": "australiaeast",
+    "template_version": "v0.1.0",
+    "year": "2026",
+    "date": "2026-04-01",
+    "base_branch": "staging"
+  },
+  "plugins": [],
+  "shared_overlay_version": "0.1.0",
+  "archetype_overlay_version": "0.1.0"
+}
