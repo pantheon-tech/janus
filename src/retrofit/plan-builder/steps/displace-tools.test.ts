@@ -31,4 +31,25 @@ describe('generateDisplaceToolsSteps', () => {
   it('returns empty for no tools', () => {
     expect(generateDisplaceToolsSteps([])).toEqual([]);
   });
+
+  it('emits displace-husky with the §6.6.1 op sequence', () => {
+    const steps = generateDisplaceToolsSteps([
+      { name: 'husky', evidence: ['.husky/', 'package.json:devDependencies.husky'] },
+    ]);
+    const husky = steps.find((s) => s.id === 'displace-husky');
+    expect(husky).toBeDefined();
+    expect(husky?.operations.map((o) => o.op)).toEqual([
+      'delete_directory',
+      'json_remove',
+      'json_remove_matching',
+      'shell',
+      'shell',
+    ]);
+    expect((husky?.operations[0] as { path: string }).path).toBe('.husky');
+    const shells = (husky?.operations ?? []).filter((o) => o.op === 'shell') as Array<{
+      command: string;
+    }>;
+    expect(shells[0]?.command).toBe('git config --unset core.hooksPath');
+    expect(shells[1]?.command).toBe('find .git/hooks -type f -not -name "*.sample" -delete');
+  });
 });

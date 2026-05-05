@@ -1,12 +1,36 @@
 import type { DisplacedTool, Plan } from '../../types/index.js';
+import { SHELL_WHITELIST } from '../../types/index.js';
 
 type Step = Plan['payload']['steps'][number];
 
 export function generateDisplaceToolsSteps(tools: DisplacedTool[]): Step[] {
   return tools.flatMap((tool) => {
-    if (tool.name === 'husky') return []; // Task 4 handles husky specially.
+    if (tool.name === 'husky') return [generateHusky()];
     return [generateOne(tool)];
   });
+}
+
+function generateHusky(): Step {
+  return {
+    id: 'displace-husky',
+    category: 'displace-tools',
+    title: 'Remove husky',
+    commit_message: 'chore: remove husky in favor of lefthook',
+    preconditions: [],
+    operations: [
+      { op: 'delete_directory', path: '.husky' },
+      { op: 'json_remove', path: 'package.json', pointer: '/devDependencies/husky' },
+      {
+        op: 'json_remove_matching',
+        path: 'package.json',
+        pointer: '/scripts',
+        key_regex: '^(prepare|postinstall)$',
+      },
+      { op: 'shell', command: SHELL_WHITELIST[2] },
+      { op: 'shell', command: SHELL_WHITELIST[3] },
+    ],
+    commit_paths: ['package.json'],
+  };
 }
 
 function generateOne(tool: DisplacedTool): Step {
