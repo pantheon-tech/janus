@@ -35,4 +35,16 @@ describe('materializeFixture', () => {
   it('throws if the fixture name is unknown', () => {
     expect(() => materializeFixture('nonexistent-fixture-xyz')).toThrow(/fixture/i);
   });
+
+  it('materializes submodule fixture and runs setup.sh', () => {
+    const fx = materializeFixture('repo-with-submodule');
+    cleanups.push(fx.cleanup);
+    expect(existsSync(join(fx.dir, '.gitmodules'))).toBe(true);
+  });
+
+  it('materializes symlink fixture', () => {
+    const fx = materializeFixture('repo-with-symlink');
+    cleanups.push(fx.cleanup);
+    expect(existsSync(join(fx.dir, 'link.txt'))).toBe(true);
+  });
 });
