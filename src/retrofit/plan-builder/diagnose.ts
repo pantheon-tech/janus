@@ -1,8 +1,8 @@
 import { existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { analyze } from '../analyzer/index.js';
 import { baselineDiff } from '../analyzer/baseline-diff.js';
+import { analyze } from '../analyzer/index.js';
 import { resolvePlugins } from '../resolvers/plugins.js';
 import { resolveSlots, type SlotKey } from '../resolvers/slots.js';
 import type { Archetype, Plan } from '../types/index.js';

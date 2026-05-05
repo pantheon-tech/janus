@@ -1,10 +1,4 @@
-import type {
-  ClaudeKitSnapshot,
-  Operation,
-  OverlayTree,
-  Plan,
-  Sha256,
-} from '../../types/index.js';
+import type { ClaudeKitSnapshot, Operation, OverlayTree, Plan, Sha256 } from '../../types/index.js';
 import { buildSettingsBase, type SettingsBase } from './settings-base.js';
 
 type Step = Plan['payload']['steps'][number];
@@ -37,8 +31,7 @@ export function generateMergeClaudeKitSteps(
     steps.push(buildOverlayStep('claude-skills-overlay', skills, tree, 'skills'));
 
   const hooks = listEntries(tree, '.claude/hooks/');
-  if (hooks.length > 0)
-    steps.push(buildOverlayStep('claude-hooks-overlay', hooks, tree, 'hooks'));
+  if (hooks.length > 0) steps.push(buildOverlayStep('claude-hooks-overlay', hooks, tree, 'hooks'));
 
   const misc = [...tree.keys()].filter(
     (p) =>
@@ -98,9 +91,7 @@ function buildClaudeMdSnapshotStep(
     content: finalContent,
     overwrite: true,
   });
-  const commit_paths = userKit.has_claude_md
-    ? ['CLAUDE.md', 'CLAUDE.pre-janus.md']
-    : ['CLAUDE.md'];
+  const commit_paths = userKit.has_claude_md ? ['CLAUDE.md', 'CLAUDE.pre-janus.md'] : ['CLAUDE.md'];
   return {
     id: 'claude-md-snapshot',
     category: 'merge-claude-kit',

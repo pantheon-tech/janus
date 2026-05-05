@@ -51,7 +51,9 @@ describe('generateApplySharedOverlaySteps', () => {
       expect.arrayContaining(['.editorconfig', '.gitattributes']),
     );
     expect(configs?.commit_paths).toEqual(expect.arrayContaining(['biome.jsonc', 'package.json']));
-    expect(docs?.commit_paths).toEqual(expect.arrayContaining(['AGENTS.md', 'LICENSE', 'README.md']));
+    expect(docs?.commit_paths).toEqual(
+      expect.arrayContaining(['AGENTS.md', 'LICENSE', 'README.md']),
+    );
   });
 
   it('attaches gitignore_merge to root-dotfiles when user has .gitignore', () => {

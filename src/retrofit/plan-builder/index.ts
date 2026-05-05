@@ -47,9 +47,7 @@ export function buildPlan(input: BuildPlanInput): Plan {
     ),
   );
 
-  const settingsBaseline = snapshot.baseline_files.find(
-    (b) => b.path === '.claude/settings.json',
-  );
+  const settingsBaseline = snapshot.baseline_files.find((b) => b.path === '.claude/settings.json');
   const claudeMdBaseline = snapshot.baseline_files.find((b) => b.path === 'CLAUDE.md');
 
   const workload = slots.workload;

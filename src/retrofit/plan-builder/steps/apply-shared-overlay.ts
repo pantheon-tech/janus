@@ -99,24 +99,19 @@ function bucketFor(path: string): string | undefined {
   return `apply-shared-overlay/${firstSeg}`;
 }
 
-function writeFileOp(
-  path: string,
-  tree: OverlayTree,
-  baseline: BaselineFileStatus[],
-): Operation {
+function writeFileOp(path: string, tree: OverlayTree, baseline: BaselineFileStatus[]): Operation {
   const entry = tree.get(path);
   if (!entry) throw new Error(`overlay tree missing entry for ${path}`);
   const status = baseline.find((b) => b.path === path);
   const includeMode = entry.mode !== 0o644;
-  const includePreHash = status?.status === 'present_differs' && status.pre_state_hash !== undefined;
+  const includePreHash =
+    status?.status === 'present_differs' && status.pre_state_hash !== undefined;
   const op: Operation = {
     op: 'write_file',
     path,
     content: entry.content.toString('utf8'),
     ...(includeMode ? { mode: entry.mode } : {}),
-    ...(includePreHash
-      ? { pre_state_hash: status.pre_state_hash as Sha256, overwrite: true }
-      : {}),
+    ...(includePreHash ? { pre_state_hash: status.pre_state_hash as Sha256, overwrite: true } : {}),
   };
   return op;
 }

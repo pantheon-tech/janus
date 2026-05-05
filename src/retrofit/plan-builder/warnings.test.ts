@@ -7,7 +7,7 @@ import type {
   PackageJsonSnapshot,
   WorkflowFile,
 } from '../types/index.js';
-import { collectWarnings, type CollectWarningsInput } from './warnings.js';
+import { type CollectWarningsInput, collectWarnings } from './warnings.js';
 
 const emptyKit: ClaudeKitSnapshot = {
   has_claude_dir: false,

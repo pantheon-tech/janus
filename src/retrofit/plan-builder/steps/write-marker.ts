@@ -11,9 +11,7 @@ export function generateWriteMarkerStep(): Step {
     title: 'Write .janus.json marker',
     commit_message: 'chore: write janus marker',
     preconditions: [],
-    operations: [
-      { op: 'write_file', path: '.janus.json', content: PLACEHOLDER, overwrite: true },
-    ],
+    operations: [{ op: 'write_file', path: '.janus.json', content: PLACEHOLDER, overwrite: true }],
     commit_paths: ['.janus.json'],
   };
 }
