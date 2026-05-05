@@ -30,4 +30,11 @@ describe('analyzeClaudeKit', () => {
     expect(k.skills).toContain('foo.md');
     expect(k.hooks).toEqual([]);
   });
+
+  it('parses settings.json into settings_json', () => {
+    const fx = materializeFixture('repo-with-user-modified-skill');
+    cleanups.push(fx.cleanup);
+    const k = analyzeClaudeKit(fx.dir);
+    expect(k.settings_json).toEqual({ permissions: { allow: ['Bash(echo *)'] } });
+  });
 });

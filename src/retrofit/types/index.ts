@@ -158,11 +158,22 @@ export type PluginEvidence = {
 export type ClaudeKitSnapshot = {
   has_claude_dir: boolean;
   has_settings_json: boolean;
+  /**
+   * Parsed contents of `.claude/settings.json` when `has_settings_json` is true
+   * and the file is valid JSON. Left unset if the file is missing or malformed.
+   */
+  settings_json?: unknown;
   has_claude_md: boolean;
   has_pre_janus_md: boolean;
   hooks: string[];
   skills: string[];
   misc: string[];
+};
+
+export type DepVersionConflict = {
+  name: string;
+  janus_range: string;
+  user_range: string;
 };
 
 export type BaselineFileStatus = {
@@ -186,6 +197,7 @@ export type RepoSnapshot = {
   claude_kit: ClaudeKitSnapshot;
   ci_workflows: WorkflowFile[];
   unrecognized_tools: string[];
+  dep_version_conflicts: DepVersionConflict[];
   plugin_evidence: PluginEvidence;
   git: {
     head_branch: string;
