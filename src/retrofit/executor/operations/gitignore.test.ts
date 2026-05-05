@@ -43,10 +43,7 @@ describe('applyGitignoreMerge', () => {
   it('replaces block body when markers present (idempotent)', () => {
     const fx = materializeFixture('greenfield');
     cleanups.push(fx.cleanup);
-    writeFileSync(
-      join(fx.dir, '.gitignore'),
-      `keep/\n${BEGIN}\nold-line\n${END}\nmore/\n`,
-    );
+    writeFileSync(join(fx.dir, '.gitignore'), `keep/\n${BEGIN}\nold-line\n${END}\nmore/\n`);
     applyGitignoreMerge(
       { op: 'gitignore_merge', lines: ['new-line', 'another'] },
       { repoRoot: fx.dir },
@@ -64,10 +61,7 @@ describe('applyGitignoreMerge', () => {
     cleanups.push(fx.cleanup);
     writeFileSync(join(fx.dir, '.gitignore'), `${BEGIN}\nbroken\n`);
     const code = captureCode(() =>
-      applyGitignoreMerge(
-        { op: 'gitignore_merge', lines: ['x'] },
-        { repoRoot: fx.dir },
-      ),
+      applyGitignoreMerge({ op: 'gitignore_merge', lines: ['x'] }, { repoRoot: fx.dir }),
     );
     expect(code).toBe('GITIGNORE_BLOCK_MALFORMED');
   });

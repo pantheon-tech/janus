@@ -5,7 +5,7 @@ import type { Plan } from '../types/index.js';
 import { checkoutNewBranch, lastCommitSha } from './git.js';
 import { buildMarker } from './marker.js';
 import { runAllRetrofitPreflight } from './preflight/index.js';
-import { emptyReport, recordResult, type RunReport } from './run-report.js';
+import { emptyReport, type RunReport, recordResult } from './run-report.js';
 import { executeStep } from './step-driver.js';
 
 export type ExecuteOpts = {
@@ -20,11 +20,7 @@ export type ExecuteOpts = {
   archetype_overlay_version?: string;
 };
 
-export async function execute(
-  plan: Plan,
-  repoRoot: string,
-  opts: ExecuteOpts,
-): Promise<RunReport> {
+export async function execute(plan: Plan, repoRoot: string, opts: ExecuteOpts): Promise<RunReport> {
   const branch = opts.branch ?? plan.payload.target_branch;
   const targetPaths = new Set(plan.payload.steps.flatMap((s) => s.commit_paths));
 

@@ -67,8 +67,7 @@ export async function applyClaudeSettingsMerge(
         const addCommand = addEntry.hooks[0]?.command ?? '';
         const exists = existing.some(
           (e) =>
-            (e.matcher ?? '') === (addEntry.matcher ?? '') &&
-            e.hooks[0]?.command === addCommand,
+            (e.matcher ?? '') === (addEntry.matcher ?? '') && e.hooks[0]?.command === addCommand,
         );
         if (!exists) out.push(addEntry);
       }

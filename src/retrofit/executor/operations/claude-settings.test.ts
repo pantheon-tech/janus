@@ -57,10 +57,7 @@ describe('applyClaudeSettingsMerge', () => {
     const fx = materializeFixture('greenfield');
     cleanups.push(fx.cleanup);
     mkdirSync(join(fx.dir, '.claude'));
-    writeFileSync(
-      join(fx.dir, '.claude/settings.json'),
-      JSON.stringify({ cleanupPeriodDays: 30 }),
-    );
+    writeFileSync(join(fx.dir, '.claude/settings.json'), JSON.stringify({ cleanupPeriodDays: 30 }));
     await applyClaudeSettingsMerge(
       {
         op: 'claude_settings_merge',

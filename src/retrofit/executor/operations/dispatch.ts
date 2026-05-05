@@ -3,12 +3,7 @@ import type { Operation } from '../../types/index.js';
 import { applyClaudeSettingsMerge } from './claude-settings.js';
 import { applyChmod, applyDeleteDirectory, applyDeleteFile, applyRenameFile } from './fs.js';
 import { applyGitignoreMerge } from './gitignore.js';
-import {
-  applyJsonMerge,
-  applyJsonRemove,
-  applyJsonRemoveMatching,
-  applyJsonSet,
-} from './json.js';
+import { applyJsonMerge, applyJsonRemove, applyJsonRemoveMatching, applyJsonSet } from './json.js';
 import { applyShell } from './shell.js';
 import { applyWriteFile } from './write-file.js';
 

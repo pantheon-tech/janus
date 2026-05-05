@@ -22,11 +22,7 @@ function pointerSegments(pointer: string): string[] {
     .map((s) => s.replaceAll('~1', '/').replaceAll('~0', '~'));
 }
 
-function setAtPointer(
-  root: Record<string, unknown>,
-  segments: string[],
-  value: unknown,
-): void {
+function setAtPointer(root: Record<string, unknown>, segments: string[], value: unknown): void {
   let cur: Record<string, unknown> = root;
   for (let i = 0; i < segments.length - 1; i++) {
     const seg = segments[i] as string;

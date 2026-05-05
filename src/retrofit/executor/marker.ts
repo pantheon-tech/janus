@@ -14,10 +14,7 @@ export function buildMarker(args: {
     archetype: args.plan.payload.archetype,
     applied_at: args.applied_at.toISOString(),
     applied_steps: args.report.committed.map((c) => c.id),
-    skipped_steps: [
-      ...args.report.skipped.map((s) => s.id),
-      ...args.report.empty.map((e) => e.id),
-    ],
+    skipped_steps: [...args.report.skipped.map((s) => s.id), ...args.report.empty.map((e) => e.id)],
     slots: args.plan.payload.slots,
     plugins: args.plan.payload.plugins,
     shared_overlay_version: args.shared_overlay_version,

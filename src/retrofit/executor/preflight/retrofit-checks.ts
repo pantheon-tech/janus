@@ -82,11 +82,10 @@ export async function runRetrofitChecks(opts: RetrofitCheckOpts): Promise<void> 
   if (!noRemoteCheck) {
     let remoteOut: string;
     try {
-      remoteOut = execFileSync(
-        'git',
-        ['ls-remote', '--heads', 'origin', targetBranch],
-        { cwd: repoRoot, stdio: ['ignore', 'pipe', 'pipe'] },
-      )
+      remoteOut = execFileSync('git', ['ls-remote', '--heads', 'origin', targetBranch], {
+        cwd: repoRoot,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      })
         .toString('utf8')
         .trim();
     } catch (e) {
