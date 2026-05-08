@@ -3,6 +3,9 @@
 # Usage: ./scripts/release.sh
 # Validates git state, prompts for version, updates package.json and CHANGELOG,
 # creates annotated tag, pushes to remote.
+#
+# Note: This script is for janus kit itself. Derived projects use release-please
+# automation (see docs/conventions/versioning.md).
 
 set -euo pipefail
 
@@ -35,7 +38,7 @@ echo
 
 # ─── Update package.json ────────────────────────────────────────────────
 echo "Updating package.json..."
-sed -i.bak "s/\"version\": \"[^\"]*\"/\"version\": \"$NEW_VERSION\"/" package.json
+sed -i.bak "s|\"version\": \"[^\"]*\"|\"version\": \"$NEW_VERSION\"|" package.json
 rm -f package.json.bak
 
 # ─── Get last tag and commit range ──────────────────────────────────────
@@ -63,28 +66,26 @@ CHANGELOG_ENTRY="## [$NEW_VERSION] - $RELEASE_DATE
 
 "
 
-# Insert the new entry after "## [Unreleased]" or at the top if no Unreleased section
+tmpfile=$(mktemp)
+trap "rm -f $tmpfile" EXIT
+
 if grep -q "^## \[Unreleased\]" CHANGELOG.md; then
-  # Insert after Unreleased header
-  sed -i.bak "/^## \[Unreleased\]/a\\
-$CHANGELOG_ENTRY" CHANGELOG.md
+  # Insert after Unreleased section header
+  awk -v entry="$CHANGELOG_ENTRY" '
+    /^## \[Unreleased\]/ {
+      print; print entry; next
+    }
+    { print }
+  ' CHANGELOG.md > "$tmpfile"
 else
-  # Prepend to file (after frontmatter if exists)
-  if head -1 CHANGELOG.md | grep -q "^---"; then
-    # Has frontmatter, insert after closing ---
-    sed -i.bak "/^---$/a\\
-\\
-$CHANGELOG_ENTRY" CHANGELOG.md
-  else
-    # No frontmatter, prepend directly
-    {
-      echo "$CHANGELOG_ENTRY"
-      cat CHANGELOG.md
-    } > CHANGELOG.md.tmp
-    mv CHANGELOG.md.tmp CHANGELOG.md
-  fi
+  # Prepend to file
+  {
+    echo "$CHANGELOG_ENTRY"
+    cat CHANGELOG.md
+  } > "$tmpfile"
 fi
-rm -f CHANGELOG.md.bak
+
+mv "$tmpfile" CHANGELOG.md
 
 # ─── Commit and tag ─────────────────────────────────────────────────────
 echo "Creating git tag..."
@@ -97,7 +98,14 @@ echo "Pushing to remote..."
 git push origin main
 git push origin "v$NEW_VERSION"
 
+# ─── Verify push succeeded ──────────────────────────────────────────────
+if git rev-parse "v$NEW_VERSION" >/dev/null 2>&1; then
+  echo "[OK] Tag verified in local repository"
+else
+  echo "Warning: Tag not found after push"
+fi
+
 echo
-echo "✓ Released janus v$NEW_VERSION"
-echo "✓ Tag: v$NEW_VERSION"
-echo "✓ GitHub Release will be created automatically"
+echo "[OK] Released janus v$NEW_VERSION"
+echo "[OK] Tag: v$NEW_VERSION"
+echo "[OK] GitHub Release will be created automatically"
