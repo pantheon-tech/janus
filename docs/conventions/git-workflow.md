@@ -123,16 +123,33 @@ GitHub Environment `prod` carries required reviewers, so the deploy job pauses f
 
 `release-please` runs only after a successful prod deploy. It opens or updates a Release PR that:
 
-- Bumps `package.json` version per Conventional Commits since the last tag.
-- Generates `CHANGELOG.md` entries.
-- When merged, creates a git tag and GitHub Release.
+- Bumps `package.json` version per Conventional Commits since the last tag
+- Generates `CHANGELOG.md` entries (Google style)
+- When merged, creates a git tag and GitHub Release
 
-For monorepos, ship `release-please-config.json` and `.release-please-manifest.json` at repo root for per-package versioning.
+**This is the convention for all derived projects.** Every project scaffolded from janus templates inherits:
+- `.github/workflows/release-please.yml` — automates Release PR creation on pushes to `main`
+- `release-please-config.json` — single-package config (default)
+- `.release-please-manifest.json` — monorepo config (monorepo-root only)
 
-This release-please flow is the convention for **derived projects**. The
-janus kit itself ships with a hand-written
-[Keep-a-Changelog](https://keepachangelog.com/) `CHANGELOG.md` — the kit has
-no deploy and no semantic version cadence to drive automated bumps.
+For detailed versioning strategy (including initial version per archetype), see [`docs/conventions/versioning.md`](versioning.md).
+
+### Single-Package Projects
+
+Most archetypes use simple release-please:
+- One `package.json` at repo root
+- One Release PR per deploy to `main`
+- One git tag + GitHub Release per version bump
+
+### Monorepo Projects
+
+`monorepo-root` archetype supports pnpm workspaces:
+- Multiple `package.json` files in workspace packages
+- Per-package versioning via `release-please-manifest.json`
+- One Release PR, multiple git tags (one per package)
+- Separate GitHub Release per updated package
+
+**Janus itself** uses manual releases. See `scripts/release.sh` and `docs/conventions/versioning.md`.
 
 ## Hygiene
 
