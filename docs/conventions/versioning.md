@@ -24,6 +24,8 @@ Janus is a template kit, not a deployed service. Releases are infrequent and int
 # GitHub automatically creates Release
 ```
 
+See scripts/release.sh for the full implementation
+
 ### Versioning
 
 - Follow [Semantic Versioning](https://semver.org/)
@@ -145,7 +147,7 @@ Before pushing to `main` (promotion from `staging`):
 3. Feature is production-ready (or behind a feature flag)
 4. Product/team has signed off
 
-Release-please happens **after** the prod deploy succeeds. If the prod deploy fails, the Release PR is not created; don't rush to merge it anyway.
+Release-please happens **after** the prod deploy succeeds. If the prod deploy fails, the Release PR will not be created automatically; do not manually create or merge one.
 
 ### Publishing (Optional)
 
@@ -157,7 +159,7 @@ npm publish
 pnpm publish
 ```
 
-This is **not** automated (Approach A: minimal). Teams can add GitHub Actions post-release hooks later if needed.
+This is **not** automated — teams can add GitHub Actions post-release hooks later if needed.
 
 For **services** (backends, frontends), deployment is separate and handled by your CD pipeline (configured per-project).
 
