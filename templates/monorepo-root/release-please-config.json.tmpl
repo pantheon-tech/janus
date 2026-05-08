@@ -1,0 +1,19 @@
+{{=<% %>=}}
+{
+  "packages": {
+    "packages/example": {
+      "changelog-path": "CHANGELOG.md",
+      "changelog-type": "google",
+      "include-component-in-tag": true,
+      "component": "example"
+    }
+  },
+  "changelog-type": "google",
+  "bump-minor-pre-major": false,
+  "bump-patch-for-minor-pre-major": false,
+  "pull-request-title-pattern": "chore(release): ${version}",
+  "pull-request-header": "## Summary\n\nAutomated releases via [release-please](https://github.com/googleapis/release-please-action).",
+  "commit-message-pattern": "chore(release): ${version}",
+  "always-link-local": true,
+  "manifest-file": ".release-please-manifest.json"
+}
