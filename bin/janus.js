@@ -40,11 +40,27 @@ const COMMANDS = {
   },
 };
 
+const TS_COMMANDS = {
+  diagnose: {
+    module: join(JANUS_ROOT, 'dist/retrofit/cli/diagnose-cmd.js'),
+    exportName: 'runDiagnose',
+    summary: 'Analyze the current repo and write a retrofit plan to .janus-retrofit.json',
+  },
+  retrofit: {
+    module: join(JANUS_ROOT, 'dist/retrofit/cli/retrofit-cmd.js'),
+    exportName: 'runRetrofit',
+    summary: 'Apply a retrofit plan, landing changes as commits on a feature branch',
+  },
+};
+
 function printHelp() {
   console.log('janus — portable project starter kit\n');
   console.log('Usage: janus <command> [args...]\n');
   console.log('Commands:');
   for (const [name, { summary }] of Object.entries(COMMANDS)) {
+    console.log(`  ${name.padEnd(10)} ${summary}`);
+  }
+  for (const [name, { summary }] of Object.entries(TS_COMMANDS)) {
     console.log(`  ${name.padEnd(10)} ${summary}`);
   }
   console.log(`  ${'update'.padEnd(10)} Alias for \`bootstrap --update\``);
@@ -64,17 +80,26 @@ if (!cmd || cmd === 'help' || cmd === '--help' || cmd === '-h') {
   process.exit(0);
 }
 
-if (cmd === 'update') {
-  // alias
-  args.unshift('--update');
-  runScript(COMMANDS.bootstrap.script, args);
-} else if (COMMANDS[cmd]) {
-  runScript(COMMANDS[cmd].script, args);
-} else {
-  console.error(`janus: unknown command \`${cmd}\`\n`);
-  printHelp();
-  process.exit(1);
+async function main() {
+  if (cmd === 'update') {
+    // alias
+    args.unshift('--update');
+    runScript(COMMANDS.bootstrap.script, args);
+  } else if (COMMANDS[cmd]) {
+    runScript(COMMANDS[cmd].script, args);
+  } else if (TS_COMMANDS[cmd]) {
+    await runTsCommand(TS_COMMANDS[cmd], args);
+  } else {
+    console.error(`janus: unknown command \`${cmd}\`\n`);
+    printHelp();
+    process.exit(1);
+  }
 }
+
+main().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});
 
 function runScript(script, scriptArgs) {
   if (!existsSync(script)) {
@@ -90,4 +115,19 @@ function runScript(script, scriptArgs) {
     process.exit(1);
   }
   process.exit(result.status ?? 1);
+}
+
+async function runTsCommand({ module, exportName }, scriptArgs) {
+  if (!existsSync(module)) {
+    console.error(`janus: subcommand requires \`pnpm build\` first; missing ${module}`);
+    process.exit(1);
+  }
+  const mod = await import(module);
+  const fn = mod[exportName];
+  if (typeof fn !== 'function') {
+    console.error(`janus: ${module} did not export ${exportName}`);
+    process.exit(1);
+  }
+  const code = await fn(scriptArgs);
+  process.exit(code ?? 0);
 }
