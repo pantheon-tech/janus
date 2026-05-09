@@ -46,7 +46,7 @@ describe('formatDiagnoseSummary', () => {
       steps: [
         {
           id: 'apply-shared-overlay',
-          category: 'apply-overlay',
+          category: 'apply-shared-overlay',
           title: '',
           commit_message: 'chore: o',
           preconditions: [],
@@ -64,7 +64,7 @@ describe('formatDiagnoseSummary', () => {
     const expected = [
       'janus diagnose v0.1.0 — backend-functions archetype',
       '',
-      'Plan: 1 steps (1 apply-overlay)',
+      'Plan: 1 steps (1 apply-shared-overlay)',
       'Slots: workload=foo, archetype=backend-functions, github_org=pantheon-tech, author=Daniel <d@e.com>, node=24, region=australiaeast',
       'Plugins: frontend-design',
       '',
@@ -91,7 +91,7 @@ describe('formatDiagnoseSummary', () => {
       steps: [
         {
           id: 's',
-          category: 'apply-overlay',
+          category: 'apply-shared-overlay',
           title: '',
           commit_message: 'c',
           preconditions: [],
@@ -113,7 +113,7 @@ describe('formatDiagnoseSummary', () => {
       steps: [
         {
           id: 's',
-          category: 'apply-overlay',
+          category: 'apply-shared-overlay',
           title: '',
           commit_message: 'c',
           preconditions: [],
@@ -134,7 +134,7 @@ describe('formatDiagnoseSummary', () => {
       steps: [
         {
           id: 's',
-          category: 'apply-overlay',
+          category: 'apply-shared-overlay',
           title: '',
           commit_message: 'c',
           preconditions: [],
@@ -155,7 +155,7 @@ describe('formatDiagnoseSummary', () => {
       steps: [
         {
           id: 's',
-          category: 'apply-overlay',
+          category: 'apply-shared-overlay',
           title: '',
           commit_message: 'c',
           preconditions: [],
@@ -182,7 +182,7 @@ describe('formatDiagnoseSummary', () => {
           title: '',
           commit_message: 'c',
           preconditions: [],
-          operations: [{ op: 'shell', command: 'pnpm install', commit_paths: ['pnpm-lock.yaml'] }],
+          operations: [{ op: 'shell', command: 'pnpm install' }],
           commit_paths: ['pnpm-lock.yaml'],
         },
       ],

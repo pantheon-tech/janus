@@ -18,7 +18,7 @@ describe('runDiagnose exit-code mapping', () => {
   });
 
   it('returns 1 when diagnose() throws a JanusError', async () => {
-    vi.mocked(diagnose).mockRejectedValueOnce(new JanusError('SLOT_REQUIRED', 'slot missing'));
+    vi.mocked(diagnose).mockRejectedValueOnce(new JanusError('INVALID_ARCHETYPE', 'invalid archetype'));
     const code = await runDiagnose(['--archetype', 'generic-ts', '--non-interactive']);
     expect(code).toBe(1);
   });

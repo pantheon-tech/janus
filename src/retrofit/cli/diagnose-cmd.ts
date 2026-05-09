@@ -1,6 +1,6 @@
 import { writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, resolve } from 'node:path';
 import type { Plan } from '../types/index.js';
 import { JanusError } from '../errors.js';
 import { diagnose } from '../plan-builder/diagnose.js';
