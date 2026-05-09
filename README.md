@@ -49,6 +49,22 @@ npx @pantheon-tech/janus scaffold
 
 Prompts for workload, archetype, GitHub org, etc. Renders a complete project tree under `~/git/<workload>/` (or path of your choice) with both `staging` and `main` branches initialized.
 
+### Retrofit an existing repo
+
+```bash
+# 1. Generate a plan
+npx @pantheon-tech/janus diagnose --archetype generic-ts
+
+# 2. Review .janus-retrofit.json (and the warnings in the summary above)
+
+# 3. Apply the plan as a series of commits on a feature branch
+npx @pantheon-tech/janus retrofit --plan .janus-retrofit.json
+
+# 4. Push and PR
+git push -u origin janus/retrofit
+gh pr create --base staging
+```
+
 ### Verify user-scope is set up
 
 ```bash

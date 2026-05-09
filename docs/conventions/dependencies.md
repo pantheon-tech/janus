@@ -48,6 +48,26 @@ TODO. Anticipated content:
 - `knip` / `depcheck` for unused-dep detection.
 - Deprecation handling (consumed dep marked deprecated upstream).
 
+## Unrecognized tools (retrofit warning allowlist)
+
+This list controls which package.json devDependencies surface a `UNKNOWN_TOOL`
+warning during `janus diagnose`. Adding a tool here is a one-PR change; janus
+v0.1 does not migrate any of these.
+
+- lint-staged
+- rome
+- dprint
+- standard
+- xo
+- changeset
+- @changesets/cli
+- turbo
+- nx
+- parcel
+- rollup
+- esbuild
+- tsup
+
 ## See also
 
 - [`security.md`](./security.md) — Dependabot config sample, third-party Action SHA pinning.
