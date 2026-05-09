@@ -77,7 +77,7 @@ describe('runRetrofit exit-code mapping', () => {
 
   it('returns 1 when execute() throws a non-MID_EXECUTION JanusError', async () => {
     const plan = writePlan([{ id: 's1', title: 't', ops: 1, commit_paths: [] }]);
-    vi.mocked(execute).mockRejectedValueOnce(new JanusError('DIRTY_WORKTREE', 'worktree dirty'));
+    vi.mocked(execute).mockRejectedValueOnce(new JanusError('TREE_DIRTY', 'worktree dirty'));
     const code = await runRetrofit(['--plan', plan, '--no-remote-check']);
     expect(code).toBe(1);
   });
