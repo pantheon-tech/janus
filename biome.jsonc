@@ -53,7 +53,7 @@
       },
       "suspicious": {
         "noExplicitAny": "error",
-        "noConsole": { "level": "warn", "options": { "allow": ["warn", "error"] } }
+        "noConsole": { "level": "warn", "options": { "allow": ["warn", "error", "log"] } }
       },
       "correctness": {
         "noUnusedImports": "error",

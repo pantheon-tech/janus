@@ -32,7 +32,11 @@ function makePlan(overrides: Partial<Plan['payload']> = {}): Plan {
       plugins: ['frontend-design@claude-plugins-official'],
       prior_marker: null,
       warnings: [
-        { code: 'MODULE_TYPE_CHANGE', message: 'pkg type cjs → module', evidence: ['package.json:type'] },
+        {
+          code: 'MODULE_TYPE_CHANGE',
+          message: 'pkg type cjs → module',
+          evidence: ['package.json:type'],
+        },
       ],
       steps: [],
       ...overrides,
@@ -95,7 +99,9 @@ describe('formatDiagnoseSummary', () => {
           title: '',
           commit_message: 'c',
           preconditions: [],
-          operations: [{ op: 'write_file', path: 'biome.jsonc', content: '{}', pre_state_hash: HASH }],
+          operations: [
+            { op: 'write_file', path: 'biome.jsonc', content: '{}', pre_state_hash: HASH },
+          ],
           commit_paths: ['biome.jsonc'],
         },
       ],
@@ -159,7 +165,9 @@ describe('formatDiagnoseSummary', () => {
           title: '',
           commit_message: 'c',
           preconditions: [],
-          operations: [{ op: 'write_file', path: 'package.json', content: '{}', pre_state_hash: HASH }],
+          operations: [
+            { op: 'write_file', path: 'package.json', content: '{}', pre_state_hash: HASH },
+          ],
           commit_paths: ['package.json'],
         },
       ],

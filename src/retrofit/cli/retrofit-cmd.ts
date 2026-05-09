@@ -1,8 +1,8 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { execute } from '../executor/index.js';
 import { JanusError, MID_EXECUTION_CODES } from '../errors.js';
 import { suggestAvailableBranch } from '../executor/git.js';
+import { execute } from '../executor/index.js';
 import { validatePlan } from '../schema/validate.js';
 import { parseArgs } from './argparse.js';
 import { formatRetrofitSummary } from './format-retrofit-summary.js';
@@ -12,7 +12,7 @@ export async function runRetrofit(argv: string[]): Promise<number> {
     console.error('janus retrofit is not supported on Windows in v0.1.');
     return 1;
   }
-  let args;
+  let args: ReturnType<typeof parseArgs>;
   try {
     args = parseArgs(argv, {
       string: ['plan', 'branch'],
@@ -46,7 +46,9 @@ export async function runRetrofit(argv: string[]): Promise<number> {
   }
   const validation = validatePlan(parsed);
   if (!validation.ok) {
-    console.error(`janus retrofit: plan failed schema validation:\n  ${validation.errors.join('\n  ')}`);
+    console.error(
+      `janus retrofit: plan failed schema validation:\n  ${validation.errors.join('\n  ')}`,
+    );
     return 1;
   }
   const plan = validation.value;
@@ -66,7 +68,9 @@ export async function runRetrofit(argv: string[]): Promise<number> {
       dryRun,
     });
     if (dryRun) {
-      console.log(`✓ Dry run passed. ${plan.payload.steps.length} steps would run on branch ${report.branch}.`);
+      console.log(
+        `✓ Dry run passed. ${plan.payload.steps.length} steps would run on branch ${report.branch}.`,
+      );
       console.log('');
       for (let i = 0; i < plan.payload.steps.length; i++) {
         const step = plan.payload.steps[i]!;
@@ -85,12 +89,18 @@ export async function runRetrofit(argv: string[]): Promise<number> {
       // — same as other pre-flight failures — but with a constructive
       // suggestion the user can paste back as `--branch <name>`.
       try {
-        const suggestion = suggestAvailableBranch(repoRoot, plan.payload.target_branch, noRemoteCheck);
+        const suggestion = suggestAvailableBranch(
+          repoRoot,
+          plan.payload.target_branch,
+          noRemoteCheck,
+        );
         console.error(
           `janus retrofit: target branch ${plan.payload.target_branch} exists; re-run with --branch ${suggestion}`,
         );
       } catch {
-        console.error(`janus retrofit: target branch ${plan.payload.target_branch} exists and no free name in -2..-99`);
+        console.error(
+          `janus retrofit: target branch ${plan.payload.target_branch} exists and no free name in -2..-99`,
+        );
       }
       return 1;
     }

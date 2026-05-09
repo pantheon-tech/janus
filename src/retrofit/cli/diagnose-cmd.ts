@@ -1,14 +1,14 @@
 import { writeFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
-import type { Plan } from '../types/index.js';
+import { fileURLToPath } from 'node:url';
+import { loadUnrecognizedToolsAllowlist } from '../analyzer/unrecognized-tools-allowlist.js';
 import { JanusError } from '../errors.js';
 import { diagnose } from '../plan-builder/diagnose.js';
-import { loadUnrecognizedToolsAllowlist } from '../analyzer/unrecognized-tools-allowlist.js';
 import type { SlotKey } from '../resolvers/slots.js';
+import type { Plan } from '../types/index.js';
 import { parseArgs } from './argparse.js';
-import { createPromptIO, makeConfirmPluginsCallback, makeSlotPromptCallback } from './prompt.js';
 import { formatDiagnoseSummary } from './format-diagnose-summary.js';
+import { createPromptIO, makeConfirmPluginsCallback, makeSlotPromptCallback } from './prompt.js';
 
 const DEFAULT_OUT = '.janus-retrofit.json';
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -20,7 +20,7 @@ export async function runDiagnose(argv: string[]): Promise<number> {
       console.error('janus retrofit is not supported on Windows in v0.1.');
       return 1;
     }
-    let args;
+    let args: ReturnType<typeof parseArgs>;
     try {
       args = parseArgs(argv, {
         string: ['archetype', 'out'],

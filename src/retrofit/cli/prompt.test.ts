@@ -1,7 +1,7 @@
-import { PassThrough, Writable } from 'node:stream';
 import { createInterface } from 'node:readline';
+import { PassThrough, Writable } from 'node:stream';
 import { describe, expect, it } from 'vitest';
-import { makeSlotPromptCallback, makeConfirmPluginsCallback } from './prompt.js';
+import { makeConfirmPluginsCallback, makeSlotPromptCallback } from './prompt.js';
 
 function makeRl(input: PassThrough, output: Writable) {
   return createInterface({ input, output, historySize: 0 });
@@ -26,7 +26,11 @@ function makeInput(lines: string[]): PassThrough {
 describe('makeSlotPromptCallback', () => {
   it('returns the line typed by the user (without trailing newline)', async () => {
     const input = makeInput(['foo\n']);
-    const output = new Writable({ write(_chunk, _enc, cb) { cb(); } });
+    const output = new Writable({
+      write(_chunk, _enc, cb) {
+        cb();
+      },
+    });
     const rl = makeRl(input, output);
     const prompt = makeSlotPromptCallback(rl);
     const v = await prompt('workload');
@@ -36,7 +40,11 @@ describe('makeSlotPromptCallback', () => {
 
   it('asks once per call and returns sequential lines on the same shared interface', async () => {
     const input = makeInput(['first\n', 'second\n']);
-    const output = new Writable({ write(_chunk, _enc, cb) { cb(); } });
+    const output = new Writable({
+      write(_chunk, _enc, cb) {
+        cb();
+      },
+    });
     const rl = makeRl(input, output);
     const prompt = makeSlotPromptCallback(rl);
     expect(await prompt('workload')).toBe('first');
@@ -48,7 +56,11 @@ describe('makeSlotPromptCallback', () => {
 describe('makeConfirmPluginsCallback (shares the rl with slot prompt)', () => {
   it('reads y/n then additions on the same interface', async () => {
     const input = makeInput(['y\n', 'banana-claude@banana-claude-marketplace\n', '\n']);
-    const output = new Writable({ write(_chunk, _enc, cb) { cb(); } });
+    const output = new Writable({
+      write(_chunk, _enc, cb) {
+        cb();
+      },
+    });
     const rl = makeRl(input, output);
     const confirm = makeConfirmPluginsCallback(rl);
     const out = await confirm(['frontend-design@claude-plugins-official']);

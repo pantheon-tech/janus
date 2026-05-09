@@ -66,7 +66,9 @@ export function formatDiagnoseSummary(plan: Plan, outPath: string): string {
   lines.push(
     `Slots: workload=${slots.workload}, archetype=${slots.archetype}, github_org=${slots.github_org}, author=${slots.author} <${slots.author_email}>, node=${slots.node_version}, region=${slots.region}`,
   );
-  lines.push(`Plugins: ${payload.plugins.length === 0 ? '(none)' : payload.plugins.map((p) => p.split('@')[0]).join(', ')}`);
+  lines.push(
+    `Plugins: ${payload.plugins.length === 0 ? '(none)' : payload.plugins.map((p) => p.split('@')[0]).join(', ')}`,
+  );
   lines.push('');
 
   if (payload.warnings.length > 0) {

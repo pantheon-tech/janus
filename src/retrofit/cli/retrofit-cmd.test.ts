@@ -27,7 +27,9 @@ const baseSlots = {
   base_branch: 'main',
 };
 
-function writePlan(steps: Array<{ id: string; title: string; ops: number; commit_paths: string[] }>): string {
+function writePlan(
+  steps: Array<{ id: string; title: string; ops: number; commit_paths: string[] }>,
+): string {
   const dir = mkdtempSync(join(tmpdir(), 'rcmd-'));
   const path = join(dir, 'plan.json');
   const plan = {
@@ -47,7 +49,10 @@ function writePlan(steps: Array<{ id: string; title: string; ops: number; commit
         title: s.title,
         commit_message: 'chore: x',
         preconditions: [],
-        operations: Array.from({ length: s.ops }, () => ({ op: 'shell' as const, command: 'pnpm install' as const })),
+        operations: Array.from({ length: s.ops }, () => ({
+          op: 'shell' as const,
+          command: 'pnpm install' as const,
+        })),
         commit_paths: s.commit_paths,
       })),
     },
@@ -95,7 +100,12 @@ describe('runRetrofit --dry-run per-step summary', () => {
 
   it('prints one block per step with id, title, ops count, commit_paths', async () => {
     const plan = writePlan([
-      { id: 'displace-eslint', title: 'remove eslint', ops: 2, commit_paths: ['.eslintrc.json', 'package.json'] },
+      {
+        id: 'displace-eslint',
+        title: 'remove eslint',
+        ops: 2,
+        commit_paths: ['.eslintrc.json', 'package.json'],
+      },
       { id: 'install-deps', title: 'pnpm install', ops: 1, commit_paths: ['pnpm-lock.yaml'] },
     ]);
     vi.mocked(execute).mockResolvedValueOnce({
