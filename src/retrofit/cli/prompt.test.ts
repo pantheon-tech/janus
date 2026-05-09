@@ -39,8 +39,8 @@ describe('makeSlotPromptCallback', () => {
     const output = new Writable({ write(_chunk, _enc, cb) { cb(); } });
     const rl = makeRl(input, output);
     const prompt = makeSlotPromptCallback(rl);
-    expect(await prompt('a')).toBe('first');
-    expect(await prompt('b')).toBe('second');
+    expect(await prompt('workload')).toBe('first');
+    expect(await prompt('author')).toBe('second');
     rl.close();
   });
 });
